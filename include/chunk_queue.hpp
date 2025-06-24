@@ -28,14 +28,13 @@ struct ChunkQueue {
     }
 
     // 出队，空则返回false
-    bool pop(T& msg) {
+    T* pop_ptr() {
         if (head == tail) {
-            // 队列为空
-            return false;
+            return nullptr;
         }
-        msg = buffer[head];
+        T* ptr = &buffer[head];
         head = (head + 1) % N;
-        return true;
+        return ptr;
     }
 
 
