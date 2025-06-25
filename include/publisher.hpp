@@ -43,7 +43,11 @@ public:
 
         bool publish() {
             if (published_ || !ptr_) return false;
+            // 实际上有2种方案：
+            // 1. 事件通知型：互斥锁+条件变量, 仅在tail更新时commit_slot()内部加锁
+            // 2. 无锁，在subscriber take时混合等待：前N次快速轮询（利用CPU缓存局部性），超过阈值后调用yield()让出CPU
             queue_->commit_slot();
+            qlock.unlock();
             queue_->cond.notify_all();
             published_ = true;
             return true;
@@ -80,16 +84,17 @@ public:
     };
 
     std::optional<LoanResult> loan() {
-        bip::scoped_lock<bip::interprocess_mutex> lock(queue_->mutex);
 
         if (registry_ && !registry_->empty()) {
             std::size_t slowest_head = queue_->tail;
             std::size_t max_dist = 0;
             for (const auto& pair : *registry_) {
-                std::size_t dist = (queue_->tail - pair.second.head + N) % N;
+                std::size_t head = pair.second.head.load(std::memory_order_acquire); // 原子读取
+                std::size_t dist = (queue_->tail - head + N) % N;
                 if (dist > max_dist) {
                     max_dist = dist;
-                    slowest_head = pair.second.head;
+                    slowest_head = head; // 可能出现的错误：如sub1是slowest,但在遍历到sub5时，sub1已经前进，此时可以写数据却未写
+                    // 可能的解决方案：进行两次for循环，如一致则继续。但耗时增加
                 }
             }
 

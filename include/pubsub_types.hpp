@@ -4,12 +4,13 @@
 #include <boost/interprocess/containers/map.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp> // Needed for ptime
+#include <atomic>
 
 namespace zero_copy_ipc {
 
 // The information stored for each subscriber in the registry
 struct SubscriberInfo {
-    std::size_t head;
+    alignas(64) std::atomic<std::size_t> head; // 原子变量，避免伪共享
     boost::posix_time::ptime last_heartbeat;
 };
 

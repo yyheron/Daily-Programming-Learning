@@ -57,30 +57,42 @@ public:
     };
 
     std::optional<SubscribMessage> take(int timeout_ms = -1) {
-        bip::scoped_lock<bip::interprocess_mutex> lock(queue_->mutex);
 
         auto it = registry_->find(subscriber_id_);
         if (it == registry_->end()) {
             return std::nullopt;
         }
 
-        std::size_t& head = it->second.head;
+        // 取出原子 head 的值
+        std::size_t head = it->second.head.load(std::memory_order_acquire);
+
+        // 1. subscriber 已经读到队列的尾部，等待生产者写入
+        // 由于每个sub都会锁一下，是否对pub的影响较大？仍需探索lock_free方案
+        bip::scoped_lock<bip::interprocess_mutex> qlock(queue_->mutex);
         if (timeout_ms < 0) {
             while (head == queue_->tail) {
-                queue_->cond.wait(lock);
+                // 条件变量的作用是让 Subscriber 在“无新数据”时休眠，只有 Publisher 发布新数据时才唤醒。
+                // 如果使用无锁方案，忙等会浪费大量 CPU，尤其是 Subscriber 很多时。
+                // 如果数据发布需要极高性能、低延迟、数据频繁，则可以去掉此处的qlock以及条件变量。
+                queue_->cond.wait(qlock);
             }
         } else {
             auto abs_time = boost::posix_time::microsec_clock::universal_time() + boost::posix_time::milliseconds(timeout_ms);
             while (head == queue_->tail) {
-                if (!queue_->cond.timed_wait(lock, abs_time)) {
+                if (!queue_->cond.timed_wait(qlock, abs_time)) {
                     it->second.last_heartbeat = boost::posix_time::second_clock::universal_time();
                     return std::nullopt;
                 }
             }
         }
+        // 2. 等到新数据后，立即释放队列锁
+        qlock.unlock();
 
+        // 3. 读取数据
         T* ptr = &queue_->buffer[head];
-        head = (head + 1) % N;
+
+        // 4. 原子推进 head，无需加锁
+        head.store((local_head + 1) % N, std::memory_order_release);
         it->second.last_heartbeat = boost::posix_time::second_clock::universal_time();
 
         return SubscribMessage(ptr);
