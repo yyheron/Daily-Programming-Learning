@@ -1,17 +1,19 @@
-#include "middleware.hpp"
+#include "subscriber.hpp"
 #include "types.hpp"
+#include "topic_types.hpp"
 #include <iostream>
 #include <thread>
 #include <chrono>
 
 int main() {
     using namespace zero_copy_ipc;
-    Subscriber<ExampleMessage> sub("demo_topic");
+    Subscriber<ExampleMessage> sub(Topic::CameraToRobot);
 
-    ExampleMessage msg;
     while (true) {
-        if (sub.take(msg)) {
-            std::cout << "Received: id=" << msg.id << ", data=" << msg.data << std::endl;
+        auto msg_opt = sub.take();
+        if (msg_opt.has_value()) {
+            auto& msg = msg_opt.value();
+            std::cout << "Received: id=" << msg->id << ", data=" << msg->data << std::endl;
         } else {
             std::cout << "No message received." << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(200));

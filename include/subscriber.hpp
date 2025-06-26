@@ -9,6 +9,8 @@
 #include <optional>
 #include <atomic>
 #include <unistd.h>
+#include <chrono>
+#include <thread>
 
 namespace zero_copy_ipc {
 
@@ -20,27 +22,43 @@ constexpr std::size_t SHM_SIZE = 1024 * 1024; // 1MB
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Subscriber {
 public:
-    Subscriber(Topic topic)
-        : shm_mgr_(topic_to_string(topic) + "_shm", SHM_SIZE, false),
-          subscriber_id_(generate_unique_id())
+    Subscriber(Topic topic, int connect_timeout_ms = 5000)
+        : shm_mgr_(nullptr), subscriber_id_(generate_unique_id()), queue_(nullptr), registry_(nullptr)
     {
-        auto& shm = shm_mgr_.shm();
+        using namespace std::chrono;
+        auto start_time = steady_clock::now();
 
-        auto queue_result = shm.find<ChunkQueue<T, N>>("ChunkQueue");
-        if (queue_result.first) {
-            queue_ = queue_result.first;
-        } else {
-            // 错误处理：队列不存在
+        while (true) {
+            try {
+                // Try to open the shared memory
+                shm_mgr_ = std::make_unique<SharedMemoryManager>(topic_to_string(topic) + "_shm", SHM_SIZE, false);
+                
+                // If successful, find the queue and registry
+                auto& shm = shm_mgr_->shm();
+                auto queue_result = shm.find<ChunkQueue<T, N>>("ChunkQueue");
+                auto registry_result = shm.find<SubscriberRegistryMap>("SubscriberRegistry");
+
+                if (queue_result.first && registry_result.first) {
+                    queue_ = queue_result.first;
+                    registry_ = registry_result.first;
+                    register_self();
+                    return; // Successfully connected and initialized
+                }
+                // If objects not found, something is wrong, but we might retry
+                
+            } catch (const boost::interprocess::interprocess_exception& e) {
+                // This is expected if the publisher hasn't started yet.
+            }
+
+            // Check for timeout
+            auto elapsed = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
+            if (elapsed > connect_timeout_ms) {
+                throw std::runtime_error("Failed to connect to publisher's shared memory: timeout.");
+            }
+            
+            // Wait before retrying
+            std::this_thread::sleep_for(milliseconds(100));
         }
-
-        auto registry_result = shm.find<SubscriberRegistryMap>("SubscriberRegistry");
-        if (registry_result.first) {
-            registry_ = registry_result.first;
-        } else {
-            // 错误处理：注册表不存在
-        }
-
-        register_self();
     }
 
     ~Subscriber() {
@@ -71,7 +89,7 @@ public:
         bip::scoped_lock<bip::interprocess_mutex> qlock(queue_->mutex);
         if (timeout_ms < 0) {
             while (head == queue_->tail) {
-                // 条件变量的作用是让 Subscriber 在“无新数据”时休眠，只有 Publisher 发布新数据时才唤醒。
+                // 条件变量的作用是让 Subscriber 在"无新数据"时休眠，只有 Publisher 发布新数据时才唤醒。
                 // 如果使用无锁方案，忙等会浪费大量 CPU，尤其是 Subscriber 很多时。
                 // 如果数据发布需要极高性能、低延迟、数据频繁，则可以去掉此处的qlock以及条件变量。
                 queue_->cond.wait(qlock);
@@ -118,7 +136,7 @@ private:
         }
     }
 
-    SharedMemoryManager shm_mgr_;
+    std::unique_ptr<SharedMemoryManager> shm_mgr_;
     ChunkQueue<T, N>* queue_;
     SubscriberRegistryMap* registry_;
     uint64_t subscriber_id_;
