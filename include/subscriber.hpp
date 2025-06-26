@@ -20,8 +20,8 @@ constexpr std::size_t SHM_SIZE = 1024 * 1024; // 1MB
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Subscriber {
 public:
-    Subscriber(const std::string& topic)
-        : shm_mgr_(topic + "_shm", SHM_SIZE, false),
+    Subscriber(Topic topic)
+        : shm_mgr_(topic_to_string(topic) + "_shm", SHM_SIZE, false),
           subscriber_id_(generate_unique_id())
     {
         auto& shm = shm_mgr_.shm();

@@ -3,7 +3,7 @@
 
 #include "shared_memory.hpp"
 #include "chunk_queue.hpp"
-#include "ipc_utils.hpp"
+#include "topic_types.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <string>
@@ -19,8 +19,8 @@ constexpr std::size_t SHM_SIZE = 1024 * 1024; // 1MB
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Publisher {
 public:
-    Publisher(const std::string& topic)
-        : shm_mgr_(topic + "_shm", SHM_SIZE, true) // 1. 创建或打开共享内存
+    Publisher(Topic topic)
+        : shm_mgr_(topic_to_string(topic) + "_shm", SHM_SIZE, true) // 1. 只创建共享内存，不打开
     {
         auto& shm = shm_mgr_.shm();
 
