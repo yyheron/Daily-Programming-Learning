@@ -11,16 +11,18 @@ enum class Topic {
 };
 
 inline const std::string& topic_to_string(Topic t) {
-    static const std::string camera = "cameraToRobot";
-    static const std::string lidar = "lidarToRobot";
-    static const std::string radar = "radarToRobot";
+    static const std::string cameraToRobot = "cameraToRobot";
+    static const std::string lidarToRobot = "lidarToRobot";
+    static const std::string radarToRobot = "radarToRobot";
     // ... 其他映射
     switch (t) {
-        case Topic::Camera: return camera;
-        case Topic::Lidar:  return lidar;
-        case Topic::Radar:  return radar;
+        case Topic::CameraToRobot: return cameraToRobot;
+        case Topic::LidarToRobot:  return lidarToRobot;
+        case Topic::RadarToRobot:  return radarToRobot;
         // ...
-        default: // 错误处理
+        default: 
+            // 错误处理
+            throw std::invalid_argument("Unknown Topic type");
     }
 }
 

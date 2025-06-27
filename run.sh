@@ -17,21 +17,36 @@ echo "Cleanup complete."
 
 
 # --- 启动阶段 ---
-echo "Starting subscriber in the background..."
+echo "Starting publisher in the background..."
+./sample_publisher &
+PUB_PID=$!
+
+
+echo "Starting subscriberA in the background..."
 # The subscriber will now wait patiently for the publisher to appear.
 # Assuming executables are in ./build/
-./build/example/sample_subscriber &
-SUB_PID=$!
+./sample_subscriberA &
+SUB_PID_A=$!
 
-# Give a moment for the subscriber process to launch, though it will be in a wait loop.
-sleep 0.5
+echo "Starting subscriberB in the background..."
+# The subscriber will now wait patiently for the publisher to appear.
+# Assuming executables are in ./build/
+./sample_subscriberB &
+SUB_PID_B=$!
 
-echo "Starting publisher..."
-./build/example/sample_publisher
+# 等 publisher 跑完
+wait $PUB_PID
+sleep 1
 
 # --- 结束阶段 ---
-echo "Publisher finished. Shutting down subscriber..."
-kill $SUB_PID
-wait $SUB_PID 2>/dev/null
+echo "Publisher finished. Shutting down subscriberA..."
+kill -SIGTERM $SUB_PID_A
+sleep 1
+wait $SUB_PID_A 2>/dev/null
+
+echo "SubscriberA finished. Shutting down subscriberB..."
+kill -SIGTERM $SUB_PID_B
+sleep 1
+wait $SUB_PID_B 2>/dev/null
 
 echo "All processes finished." 

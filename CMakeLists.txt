@@ -1,27 +1,40 @@
 cmake_minimum_required(VERSION 3.10)
-project(zero_copy_ipc_example)
+project(zero_copy_ipc_example CXX)
 
+# 设置 C++ 标准并强制执行，这是解决问题的关键
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF) # 推荐关闭编译器特定的扩展
 
-# Boost 依赖
-find_package(Boost REQUIRED COMPONENTS system thread)
+# 查找 Boost 并指定所需组件
+find_package(Boost REQUIRED COMPONENTS system thread chrono)
 
+# 设置 include 目录，相对于此 CMakeLists.txt 的位置
 include_directories(
-    ${Boost_INCLUDE_DIRS}
-    ${CMAKE_SOURCE_DIR}/include
+    "${Boost_INCLUDE_DIRS}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-# 示例源文件
-set(EXAMPLE_SRC_DIR ${CMAKE_SOURCE_DIR}/example)
-add_executable(sample_publisher ${EXAMPLE_SRC_DIR}/sample_publiser.cpp)
-add_executable(sample_subscriber ${EXAMPLE_SRC_DIR}/sample_subscriber.cpp)
+# 定义可执行文件，路径是相对于此 CMakeLists.txt
+add_executable(sample_publisher example/sample_publiser.cpp)
+add_executable(sample_subscriberA example/sample_subscriberA.cpp)
+add_executable(sample_subscriberB example/sample_subscriberB.cpp)
 
-target_link_libraries(sample_publisher PRIVATE ${Boost_LIBRARIES} pthread)
-target_link_libraries(sample_subscriber PRIVATE ${Boost_LIBRARIES} pthread)
+# 链接库到目标
+# 在 Linux 上，Boost.Interprocess 通常需要链接 rt 库
+# 使用现代的 CMake 目标链接方式
+target_link_libraries(sample_publisher PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
+target_link_libraries(sample_subscriberA PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
+target_link_libraries(sample_subscriberB PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 
-#安装run.sh到build/example文件夹下
-set(RUN_SCRIPT_SOURCE "${CMAKE_SOURCE_DIR}/run.sh")
-set(RUN_SCRIPT_DEST "${CMAKE_BINARY_DIR}/run.sh")
-file(COPY ${RUN_SCRIPT_SOURCE} DESTINATION ${CMAKE_BINARY_DIR})
-execute_process(COMMAND chmod +x ${RUN_SCRIPT_DEST})
+# 将 run.sh 脚本复制到构建目录
+# CMAKE_CURRENT_SOURCE_DIR 指向此 CMakeLists.txt 所在的目录
+set(RUN_SCRIPT_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/run.sh")
+if(EXISTS ${RUN_SCRIPT_SOURCE})
+    set(RUN_SCRIPT_DEST "${CMAKE_BINARY_DIR}/run.sh")
+    file(COPY ${RUN_SCRIPT_SOURCE} DESTINATION ${CMAKE_BINARY_DIR})
+    if(UNIX)
+        execute_process(COMMAND chmod +x ${RUN_SCRIPT_DEST})
+    endif()
+endif()
 

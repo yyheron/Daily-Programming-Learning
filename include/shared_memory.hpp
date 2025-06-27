@@ -8,13 +8,14 @@
 
 namespace zero_copy_ipc {
 
+using namespace boost::interprocess;
+
 class SharedMemoryManager {
 public:
     // create: true=创建并清空, false=只打开
     SharedMemoryManager(const std::string& name, std::size_t size, bool create)
         : shm_name_(name), is_creator_(create)
     {
-        using namespace boost::interprocess;
         if (is_creator_) {
             // Publisher (creator) logic
             publisher_lock_ = std::make_unique<named_mutex>(open_or_create, (shm_name_ + "_pub_lock").c_str());
@@ -46,17 +47,17 @@ public:
         }
     }
 
-    boost::interprocess::managed_shared_memory& shm() { return *shm_; }
+    managed_shared_memory& shm() { return *shm_; }
 
     // 提供静态方法用于手动清理遗留的共享内存
     static void remove(const std::string& name) {
-        boost::interprocess::shared_memory_object::remove(name.c_str());
+        shared_memory_object::remove(name.c_str());
     }
 
 private:
     std::string shm_name_;
     std::unique_ptr<managed_shared_memory> shm_;
-    std::unique_ptr<boost::interprocess::named_mutex> publisher_lock_;
+    std::unique_ptr<named_mutex> publisher_lock_;
     bool is_creator_;
 };
 

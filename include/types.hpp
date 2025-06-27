@@ -8,6 +8,8 @@ namespace zero_copy_ipc {
 
 // 示例：定义一个通用消息类型，可根据实际需求扩展
 struct ExampleMessage {
+    uint64_t timestamp_ms;
+    uint64_t timestamp_ns;
     uint64_t id;
     char data[256];
 
