@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include <stdexcept>
+#include <iostream>
 
 namespace zero_copy_ipc {
 
@@ -13,7 +14,7 @@ using namespace boost::interprocess;
 class SharedMemoryManager {
 public:
     // create: true=创建并清空, false=只打开
-    SharedMemoryManager(const std::string& name, std::size_t size, bool create)
+    SharedMemoryManager(const std::string& name, std::size_t size = 1024 * 1024, bool create = false)
         : shm_name_(name), is_creator_(create)
     {
         if (is_creator_) {

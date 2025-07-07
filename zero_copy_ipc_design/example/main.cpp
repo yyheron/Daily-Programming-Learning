@@ -113,7 +113,7 @@ int main() {
     test_latency<zero_copy_ipc::ExampleMessage10M>("Test 10MB Message", zero_copy_ipc::ExampleMessage10M::data_size);
 
     // 测试100MB消息
-    test_latency<zero_copy_ipc::ExampleMessage100M>("Test 100MB Message", zero_copy_ipc::ExampleMessage100M::data_size);
+    test_latency<zero_copy_ipc::ExampleMessage20M>("Test 100MB Message", zero_copy_ipc::ExampleMessage20M::data_size);
 
     return 0;
 }

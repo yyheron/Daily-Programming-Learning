@@ -1,23 +1,24 @@
+// FILEPATH: f:/Repo/Daily-Programming-Learning/include/types.hpp
 #pragma once
 
 #include <cstdint>
 #include <cstring>
-#include <string>
 
 namespace zero_copy_ipc {
 
-// 示例：定义一个通用消息类型，可根据实际需求扩展
+template<size_t N>
 struct ExampleMessage {
-    uint64_t timestamp_ms;
-    uint64_t timestamp_ns;
     uint64_t id;
-    char data[256];
+    uint64_t timestamp_ns;
+    static constexpr size_t data_size = N;
+    char data[data_size];
 
-    ExampleMessage() : id(0) { data[0] = '\0'; }
-    ExampleMessage(uint64_t id_, const std::string& str) : id(id_) {
-        std::strncpy(data, str.c_str(), sizeof(data) - 1);
-        data[sizeof(data) - 1] = '\0';
-    }
+    ExampleMessage() : id(0) { std::memset(data, 0, data_size); }
 };
 
-} // namespace
+using ExampleMessage1K = ExampleMessage<1024>;
+using ExampleMessage1M = ExampleMessage<1024 * 1024>;
+using ExampleMessage10M = ExampleMessage<10 * 1024 * 1024>;
+using ExampleMessage20M = ExampleMessage<20 * 1024 * 1024>;
+
+} // namespace zero_copy_ipc

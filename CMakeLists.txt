@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.1)
 project(zero_copy_ipc_example CXX)
 
 # 设置 C++ 标准并强制执行，这是解决问题的关键
@@ -19,6 +19,7 @@ include_directories(
 add_executable(sample_publisher example/sample_publiser.cpp)
 add_executable(sample_subscriberA example/sample_subscriberA.cpp)
 add_executable(sample_subscriberB example/sample_subscriberB.cpp)
+add_executable(sample_delivery example/main.cpp)
 
 # 链接库到目标
 # 在 Linux 上，Boost.Interprocess 通常需要链接 rt 库
@@ -26,6 +27,7 @@ add_executable(sample_subscriberB example/sample_subscriberB.cpp)
 target_link_libraries(sample_publisher PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 target_link_libraries(sample_subscriberA PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 target_link_libraries(sample_subscriberB PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
+target_link_libraries(sample_delivery PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 
 # 将 run.sh 脚本复制到构建目录
 # CMAKE_CURRENT_SOURCE_DIR 指向此 CMakeLists.txt 所在的目录

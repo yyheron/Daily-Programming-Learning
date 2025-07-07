@@ -5,7 +5,7 @@
 #include "pubsub_types.hpp"
 #include "chunk_queue.hpp"
 #include "topic_types.hpp"
-#include "error_types.hpp"
+#include "ipc_error_types.hpp"
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <string>
@@ -15,14 +15,11 @@ namespace zero_copy_ipc {
 
 using namespace boost::interprocess;
 
-constexpr std::size_t DEFAULT_QUEUE_SIZE = 128;
-constexpr std::size_t SHM_SIZE = 1024 * 1024; // 1MB
-
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Publisher {
 public:
     Publisher(Topic topic)
-        : shm_mgr_(topic_to_string(topic) + "_shm", SHM_SIZE, true) // 1. 只创建共享内存，不打开
+        : shm_mgr_(topic_to_string(topic) + "_shm", N * (sizeof(T) + 500), true) // 1. 只创建共享内存，不打开
     {
         auto& shm = shm_mgr_.shm();
 
@@ -104,9 +101,7 @@ public:
         LoanResult& operator=(LoanResult&& other) noexcept = default;
         
         IpcErrorType status() const {return errSts_;}
-        std::optional<LoanHandle>& buffer() {
-            return handle_;
-        }
+        std::optional<LoanHandle>& buffer() { return handle_;}
 
     private:
         IpcErrorType errSts_;

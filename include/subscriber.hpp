@@ -15,18 +15,16 @@
 #include <thread>
 #include <utility>
 #include <tuple>
+#include <iostream>
 
 namespace zero_copy_ipc {
 
 using namespace boost::interprocess;
 
-constexpr std::size_t DEFAULT_QUEUE_SIZE = 128;
-constexpr std::size_t SHM_SIZE = 1024 * 1024; // 1MB
-
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Subscriber {
 public:
-    Subscriber(Topic topic, int connect_timeout_ms = 5000)
+    Subscriber(Topic topic, int connect_timeout_ms = 50000)
         : shm_mgr_(nullptr), subscriber_id_(generate_unique_id()), queue_(nullptr), registry_(nullptr)
     {
         using namespace std::chrono;
@@ -35,7 +33,7 @@ public:
         while (true) {
             try {
                 // Try to open the shared memory
-                shm_mgr_ = std::make_unique<SharedMemoryManager>(topic_to_string(topic) + "_shm", SHM_SIZE, false);
+                shm_mgr_ = std::make_unique<SharedMemoryManager>(topic_to_string(topic) + "_shm");
                 
                 // If successful, find the queue and registry
                 auto& shm = shm_mgr_->shm();
@@ -46,17 +44,26 @@ public:
                     queue_ = queue_result.first;
                     registry_ = registry_result.first;
                     register_self();
+                    std::cout << "[Subscriber " << topic_to_string(topic)  << ", id" << subscriber_id_ << "] Connected successfully!" << std::endl;
                     return; // Successfully connected and initialized
+                } else {
+                    // This is the problematic case: SHM exists, but objects don't.
+                    std::cout << "[Subscriber " << topic_to_string(topic)  << ", id" << subscriber_id_ << "] SHM opened, but objects not found. "
+                              << "Queue found: " << std::boolalpha << (queue_result.first != nullptr)
+                              << ", Registry found: " << std::boolalpha << (registry_result.first != nullptr)
+                              << ". Retrying..." << std::endl;
+                    shm_mgr_.reset();
                 }
-                // If objects not found, something is wrong, but we might retry
                 
             } catch (const boost::interprocess::interprocess_exception& e) {
                 // This is expected if the publisher hasn't started yet.
+                std::cout << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Failed to connect to publisher's shared memory: " << e.what() << std::endl;
             }
 
             // Check for timeout
             auto elapsed = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
             if (elapsed > connect_timeout_ms) {
+                std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Failed to connect to publisher's shared memory: timeout." << std::endl;
                 throw std::runtime_error("Failed to connect to publisher's shared memory: timeout.");
             }
             
@@ -99,12 +106,19 @@ public:
                 queue_->cond.wait(qlock);
             }
         } else {
-            auto abs_time = boost::posix_time::microsec_clock::universal_time() + boost::posix_time::milliseconds(timeout_ms);
+            auto end_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
             while (local_head == queue_->tail) {
-                if (!queue_->cond.timed_wait(qlock, abs_time)) {
-                    it->second.last_heartbeat = boost::posix_time::second_clock::universal_time();
+                if (std::chrono::steady_clock::now() >= end_time) {
+                    // Timed out
+                    it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                     return std::nullopt;
                 }
+                // 由于不能使用 boost::ptime, 我们在这里手动实现一个轮询等待。
+                // 注意：这比使用 condition_variable::timed_wait 效率低，且会引入少量延迟。
+                // 建议的最佳实践是解决项目中 ptime 的编译/链接问题。
+                qlock.unlock();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1)); // 轮询间隔
+                qlock.lock();
             }
         }
         // 3. 等到新数据后，立即释放队列锁
@@ -115,7 +129,7 @@ public:
 
         // 5. 原子地推进共享内存中的 head
         it->second.head.store((local_head + 1) % N, std::memory_order_release);
-        it->second.last_heartbeat = boost::posix_time::second_clock::universal_time();
+        it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
         return SubscribMessage(ptr);
     }
@@ -133,11 +147,11 @@ private:
             // registry_->insert({subscriber_id_, info});
             // 不能把 SubscriberInfo 对象传给 map，根本原因是head是atomic，拷贝/移动构造自动删除
             // 而是要告诉 map 如何直接在它自己的内存里把 SubscriberInfo 对象创建出来。
-            // 这个过程叫做“就地构造” (in-place construction)。
+            // 这个过程叫做"就地构造" (in-place construction)。
             registry_->emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(subscriber_id_),
-                std::forward_as_tuple(queue_->tail, boost::posix_time::second_clock::universal_time())
+                std::forward_as_tuple(queue_->tail, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
             );
         } else {
             std::cerr << "Subscriber not connected to publisher's shared memory." << std::endl;

@@ -32,9 +32,9 @@ public:
         registry_ = shm.find_or_construct<SubscriberRegistryMap>("SubscriberRegistry")(std::less<uint64_t>(), alloc_inst);
     }
 
-    class LoanResult {
+    class LoanHandle {
     public:
-        LoanResult(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr)
+        LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr)
             : ptr_(ptr), queue_(queue), published_(false) {}
 
         T* operator->() { return ptr_; }
@@ -51,15 +51,15 @@ public:
             return true;
         }
 
-        LoanResult(const LoanResult&) = delete;
-        LoanResult& operator=(const LoanResult&) = delete;
-        LoanResult(LoanResult&& other) noexcept
+        LoanHandle(const LoanHandle&) = delete;
+        LoanHandle& operator=(const LoanHandle&) = delete;
+        LoanHandle(LoanHandle&& other) noexcept
             : ptr_(other.ptr_), queue_(other.queue_), published_(other.published_) {
             other.ptr_ = nullptr;
             other.queue_ = nullptr;
             other.published_ = true;
         }
-        LoanResult& operator=(LoanResult&& other) noexcept {
+        LoanHandle& operator=(LoanHandle&& other) noexcept {
             if (this != &other) {
                 ptr_ = other.ptr_;
                 queue_ = other.queue_;
@@ -71,7 +71,7 @@ public:
             return *this;
         }
 
-        ~LoanResult() {
+        ~LoanHandle() {
             // 可选：析构时如果未 publish，可以自动回收 slot
         }
 
@@ -81,7 +81,34 @@ public:
         bool published_;
     };
 
-    std::optional<LoanResult> loan() {
+
+    class LoanResult {
+    public:
+        // 错误情况：只有错误状态，没有handle
+        LoanResult(IpcErrorType error)
+            : errSts_(error), handle_(std::nullopt) {}
+        
+        // 成功情况：有LoanHandle对象
+        LoanResult(IpcErrorType error, LoanHandle&& handle)
+            : errSts_(error), handle_(std::move(handle)) {}
+        
+        // 禁用拷贝（因为LoanHandle禁用了拷贝）
+        LoanResult(const LoanResult&) = delete;
+        LoanResult& operator=(const LoanResult&) = delete;
+        
+        // 允许移动
+        LoanResult(LoanResult&& other) noexcept = default;
+        LoanResult& operator=(LoanResult&& other) noexcept = default;
+        
+        IpcErrorType status() const {return errSts_;}
+        std::optional<LoanHandle>& buffer() { return handle_;}
+
+    private:
+        IpcErrorType errSts_;
+        std::optional<LoanHandle> handle_;
+    };
+
+    LoanResult loan() {
 
         if (registry_ && !registry_->empty()) {
             std::size_t slowest_head = queue_->tail;
@@ -97,13 +124,13 @@ public:
             }
 
             if (((queue_->tail + 1) % N) == slowest_head) {
-                return std::nullopt;
+                return LoanResult(IpcErrorType::LoanBufferFull);
             }
         } else {
-            return std::nullopt;
+            return LoanResult(IpcErrorType::LoanNoSubscriber);
         }
         T* slot = &queue_->buffer[queue_->tail];
-        return LoanResult(slot, queue_);
+        return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
     }
 
 private:

@@ -9,6 +9,7 @@ namespace zero_copy_ipc {
 template<size_t N>
 struct ExampleMessage {
     uint64_t id;
+    uint64_t timestamp_ns;
     static constexpr size_t data_size = N;
     char data[data_size];
 
