@@ -9,7 +9,7 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <string>
-#include <optional>
+#include <boost/optional.hpp>
 
 namespace zero_copy_ipc {
 
@@ -86,7 +86,7 @@ public:
     public:
         // 错误情况：只有错误状态，没有handle
         LoanResult(IpcErrorType error)
-            : errSts_(error), handle_(std::nullopt) {}
+            : errSts_(error), handle_(boost::none) {}
         
         // 成功情况：有LoanHandle对象
         LoanResult(IpcErrorType error, LoanHandle&& handle)
@@ -101,11 +101,11 @@ public:
         LoanResult& operator=(LoanResult&& other) noexcept = default;
         
         IpcErrorType status() const {return errSts_;}
-        std::optional<LoanHandle>& buffer() { return handle_;}
+        boost::optional<LoanHandle>& buffer() { return handle_;}
 
     private:
         IpcErrorType errSts_;
-        std::optional<LoanHandle> handle_;
+        boost::optional<LoanHandle> handle_;
     };
 
     LoanResult loan() {
