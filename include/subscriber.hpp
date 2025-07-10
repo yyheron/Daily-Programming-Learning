@@ -16,6 +16,7 @@
 #include <utility>
 #include <tuple>
 #include <iostream>
+#include <vector>
 
 namespace zero_copy_ipc {
 
@@ -132,6 +133,37 @@ public:
         it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
         return SubscribMessage(ptr);
+    }
+
+    std::vector<SubscribMessage> take_batch(int max_messages = 8) {
+        std::vector<SubscribMessage> messages;
+        messages.reserve(max_messages);
+
+        auto it = registry_->find(subscriber_id_);
+        if (it == registry_->end()) {
+            return messages;
+        }
+
+        // 1. 读取当前 head
+        std::size_t local_head = it->second.head.load(std::memory_order_acquire);
+        // 2. 读取当前 tail（快照）
+        std::size_t tail = queue_->tail;
+
+        int count = 0;
+        while (local_head != tail && count < max_messages) {
+            T* ptr = &queue_->buffer[local_head];
+            messages.emplace_back(ptr);
+            ++count;
+        }
+        local_head = (local_head + count) % N;
+
+        // 3. 批量推进 head
+        if (count > 0) {
+            it->second.head.store(local_head, std::memory_order_release);
+            it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        }
+
+        return messages;
     }
 
 private:

@@ -78,9 +78,12 @@ if [ "$TEST_TYPE" = "inter-process" ]; then
     echo "All processes finished."
 elif [ "$TEST_TYPE" = "intra-process" ]; then
     # --- 进程内速度测试 ---
-    echo "Starting intra-process speed test with sample_delivery..."
-    ./sample_delivery
-    echo "Intra-process speed test finished."
+    echo "Starting intra-process speed test (take)..."
+    ./sample_delivery take
+    echo "Intra-process speed test (take) finished."
+    echo "Starting intra-process speed test (batch, batch_size=8)..."
+    ./sample_delivery batch 8
+    echo "Intra-process speed test (batch) finished."
 else 
     echo "Unknown test type. Please use [--inter-process <message_type>]|--intra-process."
 fi

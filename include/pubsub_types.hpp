@@ -17,9 +17,13 @@ namespace zero_copy_ipc {
 struct SubscriberInfo {
     alignas(64) std::atomic<std::size_t> head; // 原子变量，避免伪共享
     uint64_t last_heartbeat; // 用uint64_t替换ptime
+    // uint8_t ressure_level;  // 0-255表示消费压力
+    // uint8_t pressure_level;  // 0-255表示生产压力
 
     SubscriberInfo(std::size_t h, uint64_t t)
         : head(h), last_heartbeat(t) {}
+    // SubscriberInfo(std::size_t h, uint64_t t, uint8_t ressure_level, uint8_t pressure_level)
+    //     : head(h), last_heartbeat(t), ressure_level(ressure_level), pressure_level(pressure_level) {}
     SubscriberInfo(const SubscriberInfo&) = delete;
     SubscriberInfo& operator=(const SubscriberInfo&) = delete;
     SubscriberInfo(SubscriberInfo&&) = default;

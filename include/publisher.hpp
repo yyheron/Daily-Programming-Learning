@@ -132,6 +132,15 @@ public:
         T* slot = &queue_->buffer[queue_->tail];
         return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
     }
+    
+    // Todo: 生产者根据压力状态调整生产节奏
+    // void publisher_loop() {
+    //     while (running) {
+    //         float max_pressure = query_subscriber_pressure();
+    //         adjust_publish_rate(max_pressure);
+    //         // ...
+    //     }
+    // }
 
 private:
     SharedMemoryManager shm_mgr_;
