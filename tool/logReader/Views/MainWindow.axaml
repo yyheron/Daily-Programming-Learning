@@ -1,0 +1,21 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="https://github.com/avaloniaui"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:logReader.ViewModels"
+        x:Class="logReader.Views.MainWindow"
+        Width="400" Height="250"
+        Title="Log Reader GUI">
+  <Window.DataContext>
+    <vm:MainWindowViewModel/>
+  </Window.DataContext>
+  <StackPanel Margin="20" Spacing="10">
+    <TextBlock Text="产品选择"/>
+    <ComboBox ItemsSource="{Binding Products}" SelectedItem="{Binding SelectedProduct}"/>
+    <TextBlock Text="项目选择"/>
+    <ComboBox ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}"/>
+    <Button Content="合并日志" Command="{Binding MergeLogCommand}" IsEnabled="{Binding CanExecute}"/>
+    <Button Content="转换BinToText" Command="{Binding BinToTextCommand}" IsEnabled="{Binding CanExecute}"/>
+    <TextBlock Text="{Binding Output}" TextWrapping="Wrap"/>
+  </StackPanel>
+</Window>
