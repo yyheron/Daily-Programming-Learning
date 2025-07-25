@@ -18,6 +18,10 @@ using namespace boost::interprocess;
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Publisher {
 public:
+    // 队列大小仅支持2^n - 1；后续看是否有内存调整需求
+    static_assert(((N & (N + 1)) == 0),
+        "Queue size N must be in the form of 2^n - 1 
+        (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
     Publisher(Topic topic)
         : shm_mgr_(topic_to_string(topic) + "_shm", N * (sizeof(T) + 500), true) // 1. 只创建共享内存，不打开
     {
@@ -107,11 +111,11 @@ public:
     LoanResult loan() {
 
         if (registry_ && !registry_->empty()) {
-            std::size_t slowest_head = queue_->tail;
-            std::size_t max_dist = 0;
+            uint64_t slowest_head = queue_->tail;
+            uint64_t max_dist = 0;
             for (const auto& pair : *registry_) {
-                std::size_t head = pair.second.head.load(std::memory_order_acquire); // 原子读取
-                std::size_t dist = (queue_->tail - head + N) % N;
+                uint64_t head = pair.second.head.load(std::memory_order_acquire); // 原子读取
+                uint64_t dist = (queue_->tail - head + N) & N;
                 if (dist > max_dist) {
                     max_dist = dist;
                     slowest_head = head; // 可能出现的错误：如sub1是slowest,但在遍历到sub5时，sub1已经前进，此时可以写数据却未写
@@ -119,7 +123,7 @@ public:
                 }
             }
 
-            if (((queue_->tail + 1) % N) == slowest_head) {
+            if (((queue_->tail + 1) & N) == slowest_head) {
                 return LoanResult(IpcErrorType::LoanBufferFull);
             }
         } else {

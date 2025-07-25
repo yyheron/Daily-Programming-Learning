@@ -26,6 +26,10 @@ using namespace boost::interprocess;
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Subscriber {
 public:
+    // 队列大小仅支持2^n - 1；后续看是否有内存调整需求
+    static_assert(((N & (N + 1)) == 0),
+        "Queue size N must be in the form of 2^n - 1 
+        (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
     Subscriber(Topic topic, int connect_timeout_ms = 50000)
         : shm_mgr_(nullptr), subscriber_id_(generate_unique_id()), queue_(nullptr), registry_(nullptr)
     {
@@ -115,7 +119,7 @@ public:
                     break;
                 }
                 // 5. 原子地推进共享内存中的 head
-                it->second.head.store((local_head + 1) % N, std::memory_order_release);
+                it->second.head.store((local_head + 1) & N, std::memory_order_release);
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
                 // 调用用户提供的回调函数处理消息
@@ -172,7 +176,7 @@ public:
                     return std::nullopt;
                 }
                 // 5. 原子地推进共享内存中的 head
-                it->second.head.store((local_head + 1) % N, std::memory_order_release);
+                it->second.head.store((local_head + 1) & N, std::memory_order_release);
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
                 // 消费 eventfd 中的剩余事件，确保计数器清零
@@ -224,7 +228,7 @@ public:
             messages.emplace_back(ptr);
             ++count;
         }
-        local_head = (local_head + count) % N;
+        local_head = (local_head + count) & N;
 
         // 3. 批量推进 head
         if (count > 0) {
