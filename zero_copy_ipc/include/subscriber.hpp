@@ -1,0 +1,276 @@
+#pragma once
+
+#include "shared_memory.hpp"
+#include "pubsub_types.hpp"
+#include "chunk_queue.hpp"
+#include "ipc_utils.hpp"
+#include "topic_types.hpp"
+#include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <string>
+#include <optional>
+#include <atomic>
+#include <unistd.h>
+#include <chrono>
+#include <thread>
+#include <utility>
+#include <tuple>
+#include <iostream>
+#include <vector>
+#include <sys/epoll.h>
+
+namespace zero_copy_ipc {
+
+using namespace boost::interprocess;
+
+template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
+class Subscriber {
+public:
+    Subscriber(Topic topic, int connect_timeout_ms = 50000)
+        : shm_mgr_(nullptr), subscriber_id_(generate_unique_id()), queue_(nullptr), registry_(nullptr)
+    {
+        using namespace std::chrono;
+        auto start_time = steady_clock::now();
+
+        while (true) {
+            try {
+                // Try to open the shared memory
+                shm_mgr_ = std::make_unique<SharedMemoryManager>(topic_to_string(topic) + "_shm");
+                
+                // If successful, find the queue and registry
+                auto& shm = shm_mgr_->shm();
+                auto queue_result = shm.find<ChunkQueue<T, N>>("ChunkQueue");
+                auto registry_result = shm.find<SubscriberRegistryMap>("SubscriberRegistry");
+
+                if (queue_result.first && registry_result.first) {
+                    queue_ = queue_result.first;
+                    registry_ = registry_result.first;
+                    register_self();
+                    std::cout << "[Subscriber " << topic_to_string(topic)  << ", id" << subscriber_id_ << "] Connected successfully!" << std::endl;
+                    return; // Successfully connected and initialized
+                } else {
+                    // This is the problematic case: SHM exists, but objects don't.
+                    std::cout << "[Subscriber " << topic_to_string(topic)  << ", id" << subscriber_id_ << "] SHM opened, but objects not found. "
+                              << "Queue found: " << std::boolalpha << (queue_result.first != nullptr)
+                              << ", Registry found: " << std::boolalpha << (registry_result.first != nullptr)
+                              << ". Retrying..." << std::endl;
+                    shm_mgr_.reset();
+                }
+                
+            } catch (const boost::interprocess::interprocess_exception& e) {
+                // This is expected if the publisher hasn't started yet.
+                std::cout << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Failed to connect to publisher's shared memory: " << e.what() << std::endl;
+            }
+
+            // Check for timeout
+            auto elapsed = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
+            if (elapsed > connect_timeout_ms) {
+                std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Failed to connect to publisher's shared memory: timeout." << std::endl;
+                throw std::runtime_error("Failed to connect to publisher's shared memory: timeout.");
+            }
+            
+            // Wait before retrying
+            std::this_thread::sleep_for(milliseconds(100));
+        }
+        
+        epoll_fd_ = epoll_create1(0);
+        if (epoll_fd_ == -1) throw std::runtime_error("epoll_create1 failed");
+        epoll_event ev;
+        ev.events = EPOLLIN;
+        ev.data.fd = queue_->event_fd;
+        if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, queue_->event_fd, &ev) == -1)
+            throw std::runtime_error("epoll_ctl failed");
+    }
+
+    ~Subscriber() {
+        if (epoll_fd_ != -1) close(epoll_fd_);
+        unregister_self();
+    }
+
+    class SubscribMessage {
+    public:
+        SubscribMessage(T* ptr) : ptr_(ptr) {}
+        T* operator->() { return ptr_; }
+        T& operator*() { return *ptr_; }
+    private:
+        T* ptr_;
+    };
+
+    // 定义一个回调函数类型
+    using MessageHandler = std::function<void(SubscribMessage)>;
+
+    void take(MessageHandler handler) {
+        auto it = registry_->find(subscriber_id_);
+        if (it == registry_->end()) return;
+
+        while (true) {
+            // 1. 获取本地的 head 副本，用于循环判断
+            uint64_t local_head = it->second.head.load(std::memory_order_acquire);
+
+            while (local_head != queue_->tail) {
+                // 队列不为空，读取数据
+                T* ptr = &queue_->buffer[local_head];
+                if (!ptr) {
+                    std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
+                    break;
+                }
+                // 5. 原子地推进共享内存中的 head
+                it->second.head.store((local_head + 1) % N, std::memory_order_release);
+                it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+                // 调用用户提供的回调函数处理消息
+                handler(SubscribMessage(ptr));
+
+                // 更新 local_head 继续检查队列
+                local_head = it->second.head.load(std::memory_order_acquire);
+            }
+
+            // 队列为空，阻塞在 epoll
+            epoll_event events[1];
+            int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生
+            if (nfds <= 0) {
+                std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
+                continue;
+            }
+            // 消费 eventfd
+            uint64_t val;
+            while (read(queue_->event_fd, &val, sizeof(val)) > 0);
+        }
+    }
+    // 注意事项
+    // 用户回调阻塞风险
+    // 如果 handler 里有耗时操作，可能导致新消息处理延迟。建议 handler 内部尽量快，或用异步处理。
+    // 异常处理
+    // 如果 handler 抛异常，建议 catch 住，避免主循环退出。
+    // 进程优先级
+    // 如果进程优先级低，唤醒后调度可能仍有延迟，但这不是你的代码问题，是系统调度问题。
+    // 退出机制
+    // 目前是无限循环，建议加一个 running 标志或退出条件，方便优雅关闭。
+
+    // 示例用法：
+    // zero_copy_ipc::Subscriber<Data> subscriber(zero_copy_ipc::Topic::SomeTopic);
+    // auto handler = [](auto msg) {
+    //     std::cout << "Received value: " << msg->value << std::endl;
+    //     // 在这里添加更多的消息处理逻辑
+    // };
+    // subscriber.take(handler);
+
+    std::optional<SubscribMessage> take_one(int timeout_ms = -1) {
+
+        auto it = registry_->find(subscriber_id_);
+        if (it == registry_->end()) return std::nullopt;
+
+        while (true) {
+            // 1. 获取本地的 head 副本，用于循环判断
+            uint64_t local_head = it->second.head.load(std::memory_order_acquire);
+
+            if (local_head != queue_->tail) {
+                // 队列不为空，读取数据
+                T* ptr = &queue_->buffer[local_head];
+                if (!ptr) {
+                    std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
+                    return std::nullopt;
+                }
+                // 5. 原子地推进共享内存中的 head
+                it->second.head.store((local_head + 1) % N, std::memory_order_release);
+                it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+                // 消费 eventfd 中的剩余事件，确保计数器清零
+                uint64_t val;
+                while (read(queue_->event_fd, &val, sizeof(val)) > 0);
+
+                // 重置 epoll 监听，确保后续事件能被捕获
+                epoll_event ev;
+                ev.events = EPOLLIN | EPOLLET; // 使用边缘触发模式
+                ev.data.fd = queue_->event_fd;
+                if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, queue_->event_fd, &ev) == -1) {
+                    std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] epoll_ctl modify failed." << std::endl;
+                    return std::nullopt;
+                }
+
+                return SubscribMessage(ptr);
+            }
+
+            // 队列为空，阻塞在 epoll
+            epoll_event events[1];
+            int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生
+            if (nfds <= 0) {
+                std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
+                return std::nullopt;
+            }
+            // 消费 eventfd
+            uint64_t val;
+            while (read(queue_->event_fd, &val, sizeof(val)) > 0);
+        }
+    }
+
+    std::vector<SubscribMessage> take_batch(int max_messages = 8) {
+        std::vector<SubscribMessage> messages;
+        messages.reserve(max_messages);
+
+        auto it = registry_->find(subscriber_id_);
+        if (it == registry_->end()) {
+            return messages;
+        }
+
+        // 1. 读取当前 head
+        uint64_t local_head = it->second.head.load(std::memory_order_acquire);
+        // 2. 读取当前 tail（快照）
+        uint64_t tail = queue_->tail;
+
+        int count = 0;
+        while (local_head != tail && count < max_messages) {
+            T* ptr = &queue_->buffer[local_head];
+            messages.emplace_back(ptr);
+            ++count;
+        }
+        local_head = (local_head + count) % N;
+
+        // 3. 批量推进 head
+        if (count > 0) {
+            it->second.head.store(local_head, std::memory_order_release);
+            it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        }
+
+        return messages;
+    }
+
+private:
+    uint64_t generate_unique_id() {
+        static std::atomic<uint32_t> counter{0};
+        uint64_t pid = getpid();
+        return (pid << 32) | counter++;
+    }
+
+    void register_self() {
+        if (registry_ && queue_) {
+            // SubscriberInfo info = {queue_->tail, boost::posix_time::second_clock::universal_time()};
+            // registry_->insert({subscriber_id_, info});
+            // 不能把 SubscriberInfo 对象传给 map，根本原因是head是atomic，拷贝/移动构造自动删除
+            // 而是要告诉 map 如何直接在它自己的内存里把 SubscriberInfo 对象创建出来。
+            // 这个过程叫做"就地构造" (in-place construction)。
+            registry_->emplace(
+                std::piecewise_construct,
+                std::forward_as_tuple(subscriber_id_),
+                std::forward_as_tuple(queue_->tail, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
+            );
+        } else {
+            std::cerr << "Subscriber not connected to publisher's shared memory." << std::endl;
+        }
+    }
+
+    void unregister_self() {
+        if (registry_) {
+            registry_->erase(subscriber_id_);
+        }
+    }
+
+    std::unique_ptr<SharedMemoryManager> shm_mgr_;
+    ChunkQueue<T, N>* queue_;
+    SubscriberRegistryMap* registry_;
+    uint64_t subscriber_id_;
+    int epoll_fd_ = -1;
+
+};
+
+} // namespace zero_copy_ipc
