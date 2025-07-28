@@ -30,8 +30,14 @@ public:
     static_assert(((N & (N + 1)) == 0),
         "Queue size N must be in the form of 2^n - 1 
         (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
-    Subscriber(Topic topic, int connect_timeout_ms = 50000)
-        : shm_mgr_(nullptr), subscriber_id_(generate_unique_id()), queue_(nullptr), registry_(nullptr)
+    Subscriber(Topic topic, OnMessageCallback callback, bool auto_start = true, int connect_timeout_ms = 50000)
+        : shm_mgr_(nullptr)
+        , subscriber_id_(generate_unique_id())
+        , queue_(nullptr)
+        , registry_(nullptr)
+        , epoll_fd_(-1)
+        , running_(true)
+        , callback_(std::move(callback))
     {
         using namespace std::chrono;
         auto start_time = steady_clock::now();
@@ -84,10 +90,15 @@ public:
         ev.data.fd = queue_->event_fd;
         if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, queue_->event_fd, &ev) == -1)
             throw std::runtime_error("epoll_ctl failed");
+        
+        // 自动启动
+        if (auto_start) {
+            start();
+        }
     }
 
     ~Subscriber() {
-        if (epoll_fd_ != -1) close(epoll_fd_);
+        stop();
         unregister_self();
     }
 
@@ -100,38 +111,62 @@ public:
         T* ptr_;
     };
 
-    // 定义一个回调函数类型
-    using MessageHandler = std::function<void(SubscribMessage)>;
+    void start() {
+        if (message_thread_.joinable()) {
+            return; // 已经启动
+        }
+        message_thread_ = std::thread(&Subscriber::take_continuously, this);
+    }
 
-    void take(MessageHandler handler) {
+    void stop() {
+        running_.store(false, std::memory_order_relaxed);
+        if (message_thread_.joinable()) {
+            message_thread_.join();
+        }
+        if (epoll_fd_ != -1) {
+            close(epoll_fd_);
+            epoll_fd_ = -1;
+        }
+    }
+    // 定义一个回调函数类型
+    using OnMessageCallback = std::function<void(SubscribMessage)>;
+
+    void take_continuously() {
         auto it = registry_->find(subscriber_id_);
         if (it == registry_->end()) return;
 
-        while (true) {
+        while (running_.load(std::memory_order_relaxed)) {  // 添加退出条件检查
             // 1. 获取本地的 head 副本，用于循环判断
             uint64_t local_head = it->second.head.load(std::memory_order_acquire);
 
-            while (local_head != queue_->tail) {
+            while (local_head != queue_->tail && running_.load(std::memory_order_relaxed)) {  // 增加运行状态检查
                 // 队列不为空，读取数据
                 T* ptr = &queue_->buffer[local_head];
                 if (!ptr) {
                     std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
                     break;
                 }
-                // 5. 原子地推进共享内存中的 head
+
+                try { // 调用用户提供的回调函数处理消息
+                    callback_(SubscribMessage(ptr));
+                } catch (const std::exception& e) {
+                    std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ 
+                            << "] Handler exception: " << e.what() << std::endl;
+                }
+
+                // 原子地推进共享内存中的 head
                 it->second.head.store((local_head + 1) & N, std::memory_order_release);
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-                // 调用用户提供的回调函数处理消息
-                handler(SubscribMessage(ptr));
-
+                
                 // 更新 local_head 继续检查队列
                 local_head = it->second.head.load(std::memory_order_acquire);
             }
 
+            if (!running_) break;  // 提前退出检查
+
             // 队列为空，阻塞在 epoll
             epoll_event events[1];
-            int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生
+            int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生：这里可以增加超时选项
             if (nfds <= 0) {
                 std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
                 continue;
@@ -143,21 +178,14 @@ public:
     }
     // 注意事项
     // 用户回调阻塞风险
-    // 如果 handler 里有耗时操作，可能导致新消息处理延迟。建议 handler 内部尽量快，或用异步处理。
-    // 异常处理
-    // 如果 handler 抛异常，建议 catch 住，避免主循环退出。
-    // 进程优先级
-    // 如果进程优先级低，唤醒后调度可能仍有延迟，但这不是你的代码问题，是系统调度问题。
-    // 退出机制
-    // 目前是无限循环，建议加一个 running 标志或退出条件，方便优雅关闭。
+    // 如果 callback_ 里有耗时操作，可能导致新消息处理延迟。建议 callback_ 内部尽量快，或用异步处理。
 
     // 示例用法：
     // zero_copy_ipc::Subscriber<Data> subscriber(zero_copy_ipc::Topic::SomeTopic);
-    // auto handler = [](auto msg) {
+    // auto callback_ = [](auto msg) {
     //     std::cout << "Received value: " << msg->value << std::endl;
     //     // 在这里添加更多的消息处理逻辑
     // };
-    // subscriber.take(handler);
 
     std::optional<SubscribMessage> take_one(int timeout_ms = -1) {
 
@@ -273,7 +301,10 @@ private:
     ChunkQueue<T, N>* queue_;
     SubscriberRegistryMap* registry_;
     uint64_t subscriber_id_;
-    int epoll_fd_ = -1;
+    int epoll_fd_;
+    std::atomic<bool> running_;
+    OnMessageCallback callback_;
+    std::thread message_thread_;
 
 };
 
