@@ -20,8 +20,7 @@ class Publisher {
 public:
     // 队列大小仅支持2^n - 1；后续看是否有内存调整需求
     static_assert(((N & (N + 1)) == 0),
-        "Queue size N must be in the form of 2^n - 1 
-        (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
+        "Queue size N must be in the form of 2^n - 1 (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
     Publisher(Topic topic)
         : shm_mgr_(topic_to_string(topic) + "_shm", N * (sizeof(T) + 500), true) // 1. 只创建共享内存，不打开
     {

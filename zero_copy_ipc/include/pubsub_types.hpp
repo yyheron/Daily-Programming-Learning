@@ -8,7 +8,7 @@
 #include <optional>
 #include "ipc_error_types.hpp"
 
-constexpr std::size_t DEFAULT_QUEUE_SIZE = 50;
+constexpr std::size_t DEFAULT_QUEUE_SIZE = 63;
 // constexpr std::size_t SHM_SIZE = 1024 * 1024 * 200; // 200M
 
 namespace zero_copy_ipc {

@@ -45,7 +45,7 @@ void test_latency(const char* test_name, size_t data_size, int num_samples = 100
             sample.publish();
 
             if (!use_batch) {
-                auto receiveResult = subscriber.take();
+                auto receiveResult = subscriber.take_one();
                 if (receiveResult.has_value()) {
                     auto end = std::chrono::high_resolution_clock::now();
 

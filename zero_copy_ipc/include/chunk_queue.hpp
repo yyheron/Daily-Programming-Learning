@@ -30,8 +30,7 @@ struct ChunkQueue {
 
     // 队列大小仅支持2^n - 1；后续看是否有内存调整需求
     static_assert(((N & (N + 1)) == 0),
-        "Queue size N must be in the form of 2^n - 1 
-        (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
+        "Queue size N must be in the form of 2^n - 1 (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
     // push, pop_ptr, borrow_slot 已经被移除，因为 head 是由每个 subscriber 自己管理的
     
     void commit_slot() {

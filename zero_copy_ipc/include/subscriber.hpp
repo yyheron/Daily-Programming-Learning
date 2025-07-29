@@ -22,16 +22,28 @@
 namespace zero_copy_ipc {
 
 using namespace boost::interprocess;
+// 定义一个回调函数类型
 
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Subscriber {
 public:
+    class SubscribMessage {
+    public:
+        SubscribMessage(T* ptr) : ptr_(ptr) {}
+        T* operator->() { return ptr_; }
+        T& operator*() { return *ptr_; }
+    private:
+        T* ptr_;
+    };
+
+    using OnMessageCallback = std::function<void(SubscribMessage)>;
+
     // 队列大小仅支持2^n - 1；后续看是否有内存调整需求
     static_assert(((N & (N + 1)) == 0),
-        "Queue size N must be in the form of 2^n - 1 
-        (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
-    Subscriber(Topic topic, OnMessageCallback callback, bool auto_start = true, int connect_timeout_ms = 50000)
-        : shm_mgr_(nullptr)
+        "Queue size N must be in the form of 2^n - 1 (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
+    Subscriber(Topic topic, OnMessageCallback callback = nullptr, bool auto_start = true, int connect_timeout_ms = 50000)
+        : topic_(topic)
+        , shm_mgr_(nullptr)
         , subscriber_id_(generate_unique_id())
         , queue_(nullptr)
         , registry_(nullptr)
@@ -102,15 +114,6 @@ public:
         unregister_self();
     }
 
-    class SubscribMessage {
-    public:
-        SubscribMessage(T* ptr) : ptr_(ptr) {}
-        T* operator->() { return ptr_; }
-        T& operator*() { return *ptr_; }
-    private:
-        T* ptr_;
-    };
-
     void start() {
         if (message_thread_.joinable()) {
             return; // 已经启动
@@ -128,8 +131,6 @@ public:
             epoll_fd_ = -1;
         }
     }
-    // 定义一个回调函数类型
-    using OnMessageCallback = std::function<void(SubscribMessage)>;
 
     void take_continuously() {
         auto it = registry_->find(subscriber_id_);
@@ -143,14 +144,14 @@ public:
                 // 队列不为空，读取数据
                 T* ptr = &queue_->buffer[local_head];
                 if (!ptr) {
-                    std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
+                    std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
                     break;
                 }
 
                 try { // 调用用户提供的回调函数处理消息
                     callback_(SubscribMessage(ptr));
                 } catch (const std::exception& e) {
-                    std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ 
+                    std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ 
                             << "] Handler exception: " << e.what() << std::endl;
                 }
 
@@ -168,7 +169,7 @@ public:
             epoll_event events[1];
             int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生：这里可以增加超时选项
             if (nfds <= 0) {
-                std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
+                std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
                 continue;
             }
             // 消费 eventfd
@@ -200,7 +201,7 @@ public:
                 // 队列不为空，读取数据
                 T* ptr = &queue_->buffer[local_head];
                 if (!ptr) {
-                    std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
+                    std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
                     return std::nullopt;
                 }
                 // 5. 原子地推进共享内存中的 head
@@ -216,7 +217,7 @@ public:
                 ev.events = EPOLLIN | EPOLLET; // 使用边缘触发模式
                 ev.data.fd = queue_->event_fd;
                 if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, queue_->event_fd, &ev) == -1) {
-                    std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] epoll_ctl modify failed." << std::endl;
+                    std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] epoll_ctl modify failed." << std::endl;
                     return std::nullopt;
                 }
 
@@ -227,7 +228,7 @@ public:
             epoll_event events[1];
             int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生
             if (nfds <= 0) {
-                std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
+                std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
                 return std::nullopt;
             }
             // 消费 eventfd
@@ -297,6 +298,7 @@ private:
         }
     }
 
+    Topic topic_;
     std::unique_ptr<SharedMemoryManager> shm_mgr_;
     ChunkQueue<T, N>* queue_;
     SubscriberRegistryMap* registry_;
