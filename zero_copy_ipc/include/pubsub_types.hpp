@@ -45,4 +45,8 @@ using SubscriberRegistryMap = boost::interprocess::map<
     ShmAllocator
 >;
 
+struct PublisherCache {
+    // 多publisher场景下，使用atomic来存储。但当前实现中只有一个publisher
+    alignas(64) std::atomic<uint64_t> cached_slowest_head{0};
+};
 } // namespace zero_copy_ipc

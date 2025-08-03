@@ -159,8 +159,7 @@ public:
                 it->second.head.store((local_head + 1) & N, std::memory_order_release);
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
                 
-                // 更新 local_head 继续检查队列
-                local_head = it->second.head.load(std::memory_order_acquire);
+                local_head = (local_head + 1) & N;
             }
 
             if (!running_) break;  // 提前退出检查

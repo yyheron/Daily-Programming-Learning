@@ -108,7 +108,14 @@ public:
     };
 
     LoanResult loan() {
+        // 快速检查缓存
+        const uint64_t cached_head = queue_->cache_->cached_slowest_head.load(std::memory_order_acquire);
+        if (((queue_->tail + 1) & N) != cached_head) {
+            T* slot = &queue_->buffer[queue_->tail];
+            return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
+        }
 
+        // 如果缓存不命中，遍历所有订阅者，找到最慢的一个
         if (registry_ && !registry_->empty()) {
             uint64_t slowest_head = queue_->tail;
             uint64_t max_dist = 0;
@@ -128,6 +135,8 @@ public:
         } else {
             return LoanResult(IpcErrorType::LoanNoSubscriber);
         }
+        // 更新缓存
+        queue_->cache_->cached_slowest_head.store(slowest_head, std::memory_order_release);
         T* slot = &queue_->buffer[queue_->tail];
         return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
     }
