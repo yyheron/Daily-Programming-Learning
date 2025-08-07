@@ -5,7 +5,7 @@
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp> // Needed for ptime
 #include <atomic>
-#include <optional>
+#include <boost/optional.hpp>
 #include "ipc_error_types.hpp"
 
 constexpr std::size_t DEFAULT_QUEUE_SIZE = 63;
@@ -45,6 +45,7 @@ using SubscriberRegistryMap = boost::interprocess::map<
     ShmAllocator
 >;
 
+// slowest head 缓存，用于快速获取最慢的subscriber
 struct PublisherCache {
     // 多publisher场景下，使用atomic来存储。但当前实现中只有一个publisher
     alignas(64) std::atomic<uint64_t> cached_slowest_head{0};

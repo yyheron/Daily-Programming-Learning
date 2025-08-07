@@ -8,7 +8,7 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <string>
-#include <optional>
+#include <boost/optional.hpp>
 #include <atomic>
 #include <unistd.h>
 #include <chrono>
@@ -22,7 +22,6 @@
 namespace zero_copy_ipc {
 
 using namespace boost::interprocess;
-// 定义一个回调函数类型
 
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
 class Subscriber {
@@ -58,7 +57,7 @@ public:
             try {
                 // Try to open the shared memory
                 shm_mgr_ = std::make_unique<SharedMemoryManager>(topic_to_string(topic) + "_shm");
-                
+
                 // If successful, find the queue and registry
                 auto& shm = shm_mgr_->shm();
                 auto queue_result = shm.find<ChunkQueue<T, N>>("ChunkQueue");
@@ -69,7 +68,7 @@ public:
                     registry_ = registry_result.first;
                     register_self();
                     std::cout << "[Subscriber " << topic_to_string(topic)  << ", id" << subscriber_id_ << "] Connected successfully!" << std::endl;
-                    return; // Successfully connected and initialized
+                    break; // Successfully connected and initialized
                 } else {
                     // This is the problematic case: SHM exists, but objects don't.
                     std::cout << "[Subscriber " << topic_to_string(topic)  << ", id" << subscriber_id_ << "] SHM opened, but objects not found. "
@@ -78,7 +77,7 @@ public:
                               << ". Retrying..." << std::endl;
                     shm_mgr_.reset();
                 }
-                
+
             } catch (const boost::interprocess::interprocess_exception& e) {
                 // This is expected if the publisher hasn't started yet.
                 std::cout << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Failed to connect to publisher's shared memory: " << e.what() << std::endl;
@@ -90,11 +89,11 @@ public:
                 std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Failed to connect to publisher's shared memory: timeout." << std::endl;
                 throw std::runtime_error("Failed to connect to publisher's shared memory: timeout.");
             }
-            
+
             // Wait before retrying
             std::this_thread::sleep_for(milliseconds(100));
         }
-        
+
         epoll_fd_ = epoll_create1(0);
         if (epoll_fd_ == -1) throw std::runtime_error("epoll_create1 failed");
         epoll_event ev;
@@ -102,7 +101,7 @@ public:
         ev.data.fd = queue_->event_fd;
         if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, queue_->event_fd, &ev) == -1)
             throw std::runtime_error("epoll_ctl failed");
-        
+
         // 自动启动
         if (auto_start) {
             start();
@@ -158,8 +157,9 @@ public:
                 // 原子地推进共享内存中的 head
                 it->second.head.store((local_head + 1) & N, std::memory_order_release);
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-                
+
                 local_head = (local_head + 1) & N;
+                std::cout << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] Consume message, local_head: " << local_head << ". current tail" << queue_->tail << std::endl;
             }
 
             if (!running_) break;  // 提前退出检查
@@ -176,24 +176,13 @@ public:
             while (read(queue_->event_fd, &val, sizeof(val)) > 0);
         }
     }
-    // 注意事项
-    // 用户回调阻塞风险
-    // 如果 callback_ 里有耗时操作，可能导致新消息处理延迟。建议 callback_ 内部尽量快，或用异步处理。
 
-    // 示例用法：
-    // zero_copy_ipc::Subscriber<Data> subscriber(zero_copy_ipc::Topic::SomeTopic);
-    // auto callback_ = [](auto msg) {
-    //     std::cout << "Received value: " << msg->value << std::endl;
-    //     // 在这里添加更多的消息处理逻辑
-    // };
-
-    std::optional<SubscribMessage> take_one(int timeout_ms = -1) {
-
+    boost::optional<SubscribMessage> take_one(int timeout_ms = -1) {
         auto it = registry_->find(subscriber_id_);
-        if (it == registry_->end()) return std::nullopt;
+        if (it == registry_->end()) return boost::none;
 
         while (true) {
-            // 1. 获取本地的 head 副本，用于循环判断
+            // 获取本地的 head 副本，用于循环判断
             uint64_t local_head = it->second.head.load(std::memory_order_acquire);
 
             if (local_head != queue_->tail) {
@@ -201,9 +190,9 @@ public:
                 T* ptr = &queue_->buffer[local_head];
                 if (!ptr) {
                     std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
-                    return std::nullopt;
+                    return boost::none;
                 }
-                // 5. 原子地推进共享内存中的 head
+                // 原子地推进共享内存中的 head
                 it->second.head.store((local_head + 1) & N, std::memory_order_release);
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
@@ -217,7 +206,7 @@ public:
                 ev.data.fd = queue_->event_fd;
                 if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, queue_->event_fd, &ev) == -1) {
                     std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] epoll_ctl modify failed." << std::endl;
-                    return std::nullopt;
+                    return boost::none;
                 }
 
                 return SubscribMessage(ptr);
@@ -228,7 +217,7 @@ public:
             int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生
             if (nfds <= 0) {
                 std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
-                return std::nullopt;
+                return boost::none;
             }
             // 消费 eventfd
             uint64_t val;
@@ -254,9 +243,9 @@ public:
         while (local_head != tail && count < max_messages) {
             T* ptr = &queue_->buffer[local_head];
             messages.emplace_back(ptr);
+            local_head = (local_head + 1) & N;
             ++count;
         }
-        local_head = (local_head + count) & N;
 
         // 3. 批量推进 head
         if (count > 0) {
@@ -266,6 +255,7 @@ public:
 
         return messages;
     }
+
 
 private:
     uint64_t generate_unique_id() {
@@ -306,7 +296,5 @@ private:
     std::atomic<bool> running_;
     OnMessageCallback callback_;
     std::thread message_thread_;
-
 };
-
 } // namespace zero_copy_ipc

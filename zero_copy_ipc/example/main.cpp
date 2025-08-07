@@ -12,9 +12,11 @@
 #include <cstring>
 #include <string>
 #include <thread> // Added for std::this_thread::sleep_for
+#include <tuple>
 
 template<typename MessageT>
 void test_latency(const char* test_name, size_t data_size, int num_samples = 100, bool use_batch = false, int batch_size = 8) {
+    std::cout << "running test: " << test_name << " with data size: " << data_size << " bytes, samples: " << num_samples << ", use_batch: " << use_batch << ", batch_size: " << batch_size << std::endl;
     using namespace zero_copy_ipc;
     Publisher<MessageT> publisher(Topic::CameraToRobot);
     Subscriber<MessageT> subscriber(Topic::CameraToRobot);
@@ -104,9 +106,14 @@ void test_latency(const char* test_name, size_t data_size, int num_samples = 100
         return std::make_tuple(mean, stdev, min_val, max_val);
     };
 
-    auto [pure_mean, pure_stdev, pure_min, pure_max] = calculate_stats(pure_latencies);
-    auto [copy_plus_mean, copy_plus_stdev, copy_plus_min, copy_plus_max] = calculate_stats(copy_plus_latencies);
-    auto [copy_mean, copy_stdev, copy_min, copy_max] = calculate_stats(copy_durations);
+    double pure_mean, pure_stdev, pure_min, pure_max;
+    std::tie(pure_mean, pure_stdev, pure_min, pure_max) = calculate_stats(pure_latencies);
+   
+    double copy_plus_mean, copy_plus_stdev, copy_plus_min, copy_plus_max;
+    std::tie(copy_plus_mean, copy_plus_stdev, copy_plus_min, copy_plus_max) = calculate_stats(copy_plus_latencies);
+   
+    double copy_mean, copy_stdev, copy_min, copy_max;
+    std::tie(copy_mean, copy_stdev, copy_min, copy_max) = calculate_stats(copy_durations);
 
     std::cout << "Test: " << test_name << std::endl;
     std::cout << "Data size: " << data_size << " bytes" << std::endl;

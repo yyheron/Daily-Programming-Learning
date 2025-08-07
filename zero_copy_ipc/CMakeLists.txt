@@ -16,18 +16,20 @@ include_directories(
 )
 
 # 定义可执行文件，路径是相对于此 CMakeLists.txt
-add_executable(sample_publisher example/sample_publiser.cpp)
-add_executable(sample_subscriberA example/sample_subscriberA.cpp)
-add_executable(sample_subscriberB example/sample_subscriberB.cpp)
+# add_executable(sample_publisher example/sample_publiser.cpp)
+# add_executable(sample_subscriberA example/sample_subscriberA.cpp)
+# add_executable(sample_subscriberB example/sample_subscriberB.cpp)
 add_executable(sample_delivery example/main.cpp)
+add_executable(sample_callback example/callback.cpp)
 
 # 链接库到目标
 # 在 Linux 上，Boost.Interprocess 通常需要链接 rt 库
 # 使用现代的 CMake 目标链接方式
-target_link_libraries(sample_publisher PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
-target_link_libraries(sample_subscriberA PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
-target_link_libraries(sample_subscriberB PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
+# target_link_libraries(sample_publisher PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
+# target_link_libraries(sample_subscriberA PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
+# target_link_libraries(sample_subscriberB PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 target_link_libraries(sample_delivery PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
+target_link_libraries(sample_callback PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 
 # 将 run.sh 脚本复制到构建目录
 # CMAKE_CURRENT_SOURCE_DIR 指向此 CMakeLists.txt 所在的目录

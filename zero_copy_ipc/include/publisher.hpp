@@ -9,7 +9,7 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <string>
-#include <optional>
+#include <boost/optional.hpp>
 
 namespace zero_copy_ipc {
 
@@ -33,6 +33,7 @@ public:
         //    需要先构造一个分配器实例，并把它传给 map 的构造函数
         const ShmAllocator alloc_inst(shm.get_segment_manager());
         registry_ = shm.find_or_construct<SubscriberRegistryMap>("SubscriberRegistry")(std::less<uint64_t>(), alloc_inst);
+        cache_ = shm.find_or_construct<PublisherCache>("PublisherCache")();
     }
 
     class LoanHandle {
@@ -40,15 +41,15 @@ public:
         LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr)
             : ptr_(ptr), queue_(queue), published_(false) {}
 
-        T* operator->() { return ptr_; }
-        T& operator*() { return *ptr_; }
-
         bool publish() {
             if (published_ || !ptr_) return false;
             queue_->commit_slot();
             published_ = true;
             return true;
         }
+
+        T* operator->() { return ptr_; }
+        T& operator*() { return *ptr_; }
 
         LoanHandle(const LoanHandle&) = delete;
         LoanHandle& operator=(const LoanHandle&) = delete;
@@ -70,9 +71,7 @@ public:
             return *this;
         }
 
-        ~LoanHandle() {
-            // 可选：析构时如果未 publish，可以自动回收 slot
-        }
+        ~LoanHandle(){}
 
     private:
         T* ptr_;
@@ -85,7 +84,7 @@ public:
     public:
         // 错误情况：只有错误状态，没有handle
         LoanResult(IpcErrorType error)
-            : errSts_(error), handle_(std::nullopt) {}
+            : errSts_(error), handle_(boost::none) {}
         
         // 成功情况：有LoanHandle对象
         LoanResult(IpcErrorType error, LoanHandle&& handle)
@@ -100,21 +99,21 @@ public:
         LoanResult& operator=(LoanResult&& other) noexcept = default;
         
         IpcErrorType status() const {return errSts_;}
-        std::optional<LoanHandle>& buffer() { return handle_;}
+        boost::optional<LoanHandle>& buffer() { return handle_;}
 
     private:
         IpcErrorType errSts_;
-        std::optional<LoanHandle> handle_;
+        boost::optional<LoanHandle> handle_;
     };
 
     LoanResult loan() {
         // 快速检查缓存
-        const uint64_t cached_head = queue_->cache_->cached_slowest_head.load(std::memory_order_acquire);
+        const uint64_t cached_head = cache_->cached_slowest_head.load(std::memory_order_acquire);
         if (((queue_->tail + 1) & N) != cached_head) {
             T* slot = &queue_->buffer[queue_->tail];
             return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
         }
-
+    
         // 如果缓存不命中，遍历所有订阅者，找到最慢的一个
         if (registry_ && !registry_->empty()) {
             uint64_t slowest_head = queue_->tail;
@@ -128,15 +127,16 @@ public:
                     // 可能的解决方案：进行两次for循环，如一致则继续。但耗时增加
                 }
             }
-
+        
             if (((queue_->tail + 1) & N) == slowest_head) {
                 return LoanResult(IpcErrorType::LoanBufferFull);
             }
+             // 更新缓存
+            cache_->cached_slowest_head.store(slowest_head, std::memory_order_release);
         } else {
             return LoanResult(IpcErrorType::LoanNoSubscriber);
         }
-        // 更新缓存
-        queue_->cache_->cached_slowest_head.store(slowest_head, std::memory_order_release);
+    
         T* slot = &queue_->buffer[queue_->tail];
         return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
     }
@@ -154,6 +154,7 @@ private:
     SharedMemoryManager shm_mgr_;
     ChunkQueue<T, N>* queue_;
     SubscriberRegistryMap* registry_;
+    PublisherCache* cache_;
 };
 
 } // namespace zero_copy_ipc
