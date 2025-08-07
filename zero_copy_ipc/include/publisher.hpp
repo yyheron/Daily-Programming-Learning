@@ -9,7 +9,8 @@
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <string>
-#include <optional>
+#include <boost/optional.hpp>
+#include "ipc_utils.hpp"
 
 namespace zero_copy_ipc {
 
@@ -21,18 +22,53 @@ public:
     // 队列大小仅支持2^n - 1；后续看是否有内存调整需求
     static_assert(((N & (N + 1)) == 0),
         "Queue size N must be in the form of 2^n - 1 (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
+
+    // SFINAE重载：处理需要STL分配器的情况
+    template <typename Shm>
+    void create_queue(Shm& shm, std::true_type /* needs_allocator */) {
+        const ShmStlAllocator<T> allocator(shm.get_segment_manager());
+        queue_ = shm.template find_or_construct<ChunkQueue<T, N>>("ChunkQueueStl")(allocator);
+    }
+
+    // SFINAE重载：处理不需要STL分配器的情况
+    template <typename Shm>
+    void create_queue(Shm& shm, std::false_type /* needs_allocator */) {
+        queue_ = shm.template find_or_construct<ChunkQueue<T, N>>("ChunkQueueBasic")();
+    }
+    
     Publisher(Topic topic)
         : shm_mgr_(topic_to_string(topic) + "_shm", N * (sizeof(T) + 500), true) // 1. 只创建共享内存，不打开
     {
-        auto& shm = shm_mgr_.shm();
+        // 1. 获取共享内存段管理器
+        auto& segment = shm_mgr_.shm();
 
-        // 2. 找到或构造 ChunkQueue
-        queue_ = shm.find_or_construct<ChunkQueue<T, N>>("ChunkQueue")();
+        // 2. 找到或构造 SubscriberRegistryMap
+        const ShmAllocator registry_allocator(segment.get_segment_manager());
+        registry_ = segment.find_or_construct<SubscriberRegistryMap>("SubscriberRegistry")(std::less<uint64_t>(), registry_allocator);
+        
+        // 使用SFINAE分派到正确的创建函数
+        create_queue(segment, std::integral_constant<bool, needs_stl_allocator<T>::value>());
+        // queue_ = create_queue(segment, 
+        //              needs_stl_allocator<T>::value ? "ChunkQueueStl" : "ChunkQueueBasic",
+        //              std::integral_constant<bool, needs_stl_allocator<T>::value>());
+        //     // 代办项：
+        //     // 2. shared_memory.hpp切换为managed_mapped_file（动态扩容支持）
+        //     // 3. pulisher.cpp调整内存估算公式（避免容器扩容失败）
+        //     // 1. pubsub_types.hpp封装std::stack（完全隔离）
+        //     // 例如：
+        //     // template <typename T>
+        //     // struct stack {
+        //     // private:
+        //     //     deque<T> c;
+        //     // public:
+        //     //     explicit stack(const typename deque<T>::allocator_type& alloc) : c(alloc) {}
+        //     //     void push(const T& val) { c.push_back(val); }
+        //     //     void pop() { c.pop_back(); }
+        //     //     T& top() { return c.back(); }
+        //     //     // 实现其他必要接口...
+        //     // };
 
-        // 3. 找到或构造 SubscriberRegistryMap
-        //    需要先构造一个分配器实例，并把它传给 map 的构造函数
-        const ShmAllocator alloc_inst(shm.get_segment_manager());
-        registry_ = shm.find_or_construct<SubscriberRegistryMap>("SubscriberRegistry")(std::less<uint64_t>(), alloc_inst);
+        cache_ = segment.find_or_construct<PublisherCache>("PublisherCache")();
     }
 
     class LoanHandle {
@@ -40,15 +76,15 @@ public:
         LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr)
             : ptr_(ptr), queue_(queue), published_(false) {}
 
-        T* operator->() { return ptr_; }
-        T& operator*() { return *ptr_; }
-
         bool publish() {
             if (published_ || !ptr_) return false;
             queue_->commit_slot();
             published_ = true;
             return true;
         }
+
+        T* operator->() { return ptr_; }
+        T& operator*() { return *ptr_; }
 
         LoanHandle(const LoanHandle&) = delete;
         LoanHandle& operator=(const LoanHandle&) = delete;
@@ -70,9 +106,7 @@ public:
             return *this;
         }
 
-        ~LoanHandle() {
-            // 可选：析构时如果未 publish，可以自动回收 slot
-        }
+        ~LoanHandle(){}
 
     private:
         T* ptr_;
@@ -85,7 +119,7 @@ public:
     public:
         // 错误情况：只有错误状态，没有handle
         LoanResult(IpcErrorType error)
-            : errSts_(error), handle_(std::nullopt) {}
+            : errSts_(error), handle_(boost::none) {}
         
         // 成功情况：有LoanHandle对象
         LoanResult(IpcErrorType error, LoanHandle&& handle)
@@ -100,21 +134,21 @@ public:
         LoanResult& operator=(LoanResult&& other) noexcept = default;
         
         IpcErrorType status() const {return errSts_;}
-        std::optional<LoanHandle>& buffer() { return handle_;}
+        boost::optional<LoanHandle>& buffer() { return handle_;}
 
     private:
         IpcErrorType errSts_;
-        std::optional<LoanHandle> handle_;
+        boost::optional<LoanHandle> handle_;
     };
 
     LoanResult loan() {
         // 快速检查缓存
-        const uint64_t cached_head = queue_->cache_->cached_slowest_head.load(std::memory_order_acquire);
+        const uint64_t cached_head = cache_->cached_slowest_head.load(std::memory_order_acquire);
         if (((queue_->tail + 1) & N) != cached_head) {
             T* slot = &queue_->buffer[queue_->tail];
             return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
         }
-
+    
         // 如果缓存不命中，遍历所有订阅者，找到最慢的一个
         if (registry_ && !registry_->empty()) {
             uint64_t slowest_head = queue_->tail;
@@ -128,15 +162,16 @@ public:
                     // 可能的解决方案：进行两次for循环，如一致则继续。但耗时增加
                 }
             }
-
+        
             if (((queue_->tail + 1) & N) == slowest_head) {
                 return LoanResult(IpcErrorType::LoanBufferFull);
             }
+             // 更新缓存
+            cache_->cached_slowest_head.store(slowest_head, std::memory_order_release);
         } else {
             return LoanResult(IpcErrorType::LoanNoSubscriber);
         }
-        // 更新缓存
-        queue_->cache_->cached_slowest_head.store(slowest_head, std::memory_order_release);
+    
         T* slot = &queue_->buffer[queue_->tail];
         return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
     }
@@ -154,6 +189,7 @@ private:
     SharedMemoryManager shm_mgr_;
     ChunkQueue<T, N>* queue_;
     SubscriberRegistryMap* registry_;
+    PublisherCache* cache_;
 };
 
 } // namespace zero_copy_ipc

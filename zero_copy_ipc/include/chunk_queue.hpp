@@ -6,6 +6,9 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 #include <atomic>
+#include <type_traits>
+#include "ipc_utils.hpp"
+#include "pubsub_types.hpp"
 
 namespace zero_copy_ipc {
 
@@ -14,18 +17,47 @@ using namespace boost::interprocess;
 // 环形缓冲区，支持多进程安全
 template<typename T, std::size_t N>
 struct ChunkQueue {
+private:
+    using allocator_type = ShmStlAllocator<T>; // 添加分配器类型定义
+    template <typename U = T>
+    typename std::enable_if<needs_stl_allocator<U>::value>::type
+    construct_element(void* slot, const allocator_type& alloc) {
+        new (slot) T(alloc);
+    }
+
+    template <typename U = T>
+    typename std::enable_if<!needs_stl_allocator<U>::value>::type
+    construct_element(void* slot, const allocator_type& /*alloc*/) {
+        new (slot) T{}; // 值初始化，比()更安全
+    }
+
+public:
     T buffer[N];
     alignas(64) std::atomic<uint64_t> tail{0};
     int event_fd = -1; // 新增eventfd
     
-    ChunkQueue() {
-        event_fd = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
-        if (event_fd == -1) {
-            perror("eventfd create failed");
+    // 合并构造函数，默认参数为nullptr
+    explicit ChunkQueue(const ShmStlAllocator<T>* alloc = nullptr) {
+        InitEventFd();
+        // if (alloc == nullptr) return;
+        for (auto& slot : buffer) {
+            construct_element(&slot, *alloc);
         }
     }
+
     ~ChunkQueue() {
         if (event_fd != -1) close(event_fd);
+        if (std::is_trivially_destructible<T>::value) return;
+        for (auto& slot : buffer) {
+            slot.~T();  // 显式调用析构函数
+        }
+    }
+
+    void InitEventFd() {
+        event_fd = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
+        if (event_fd == -1) {
+            std::cerr << "eventfd create failed" << std::endl;
+        }
     }
 
     // 队列大小仅支持2^n - 1；后续看是否有内存调整需求

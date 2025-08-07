@@ -2,10 +2,25 @@
 
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/containers/map.hpp>
+#include <boost/interprocess/containers/set.hpp>
+#include <boost/interprocess/containers/vector.hpp>
+#include <boost/interprocess/containers/list.hpp>
+#include <boost/interprocess/containers/deque.hpp>
+#include <boost/interprocess/containers/string.hpp>
+#include <boost/interprocess/containers/deque.hpp>
+#include <boost/unordered_set.hpp> 
+#include <boost/unordered_map.hpp>
+
 #include <boost/interprocess/allocators/allocator.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp> // Needed for ptime
+#include <functional>
+#include <stack>
+#include <queue>
+#include <forward_list>
+#include <set>
+#include <map>
+
 #include <atomic>
-#include <optional>
+#include <boost/optional.hpp>
 #include "ipc_error_types.hpp"
 
 constexpr std::size_t DEFAULT_QUEUE_SIZE = 63;
@@ -45,8 +60,61 @@ using SubscriberRegistryMap = boost::interprocess::map<
     ShmAllocator
 >;
 
+// slowest head 缓存，用于快速获取最慢的subscriber
 struct PublisherCache {
     // 多publisher场景下，使用atomic来存储。但当前实现中只有一个publisher
     alignas(64) std::atomic<uint64_t> cached_slowest_head{0};
 };
+
+// 添加共享内存向量分配器和类型定义
+template <typename T>
+using ShmStlAllocator = boost::interprocess::allocator<
+    T, 
+    boost::interprocess::managed_shared_memory::segment_manager
+>;
+
+template <typename CharT = char>
+using basic_string = boost::interprocess::basic_string<CharT, std::char_traits<CharT>, ShmStlAllocator<CharT>>;
+using string = basic_string<char>;
+using wstring = basic_string<wchar_t>;
+
+template <typename T>
+using vector = boost::interprocess::vector<T, ShmStlAllocator<T>>;
+
+template <typename T>
+using list = boost::interprocess::list<T, ShmStlAllocator<T>>;
+
+template <typename T>
+using deque = boost::interprocess::deque<T, ShmStlAllocator<T>>;
+
+template <typename Key, typename T>
+using map = boost::interprocess::map<Key, T, std::less<Key>, ShmStlAllocator<std::pair<const Key, T>>>;
+
+template <typename T>
+using set = boost::interprocess::set<T, std::less<T>, ShmStlAllocator<T>>;
+
+template <typename T> 
+using unordered_set = boost::unordered::unordered_set<T, std::hash<T>, std::equal_to<T>, ShmStlAllocator<T>>;
+
+template <typename Key, typename T>
+using unordered_map = boost::unordered::unordered_map<Key, T, std::hash<Key>, std::equal_to<Key>, ShmStlAllocator<std::pair<const Key, T>>>;
+
+template <typename T>
+using stack = std::stack<T, deque<T>>;
+
+template <typename T>
+using queue = std::queue<T, deque<T>>;
+
+template <typename T>
+using priority_queue = std::priority_queue<T, vector<T>>;
+
+template <typename T>
+using forward_list = std::forward_list<T, ShmStlAllocator<T>>;
+
+template <typename T>
+using multiset = std::multiset<T, std::less<T>, ShmStlAllocator<T>>;
+
+template <typename Key, typename T>
+using multimap = std::multimap<Key, T, std::less<Key>, ShmStlAllocator<std::pair<const Key, T>>>;
+
 } // namespace zero_copy_ipc

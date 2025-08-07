@@ -12,6 +12,7 @@
 #include <cstring>
 #include <string>
 #include <thread> // Added for std::this_thread::sleep_for
+#include <tuple>
 
 template<typename MessageT>
 void test_latency(const char* test_name, size_t data_size, int num_samples = 100, bool use_batch = false, int batch_size = 8) {
@@ -104,31 +105,36 @@ void test_latency(const char* test_name, size_t data_size, int num_samples = 100
         return std::make_tuple(mean, stdev, min_val, max_val);
     };
 
-    auto [pure_mean, pure_stdev, pure_min, pure_max] = calculate_stats(pure_latencies);
-    auto [copy_plus_mean, copy_plus_stdev, copy_plus_min, copy_plus_max] = calculate_stats(copy_plus_latencies);
-    auto [copy_mean, copy_stdev, copy_min, copy_max] = calculate_stats(copy_durations);
+    double pure_mean, pure_stdev, pure_min, pure_max;
+    std::tie(pure_mean, pure_stdev, pure_min, pure_max) = calculate_stats(pure_latencies);
+   
+    double copy_plus_mean, copy_plus_stdev, copy_plus_min, copy_plus_max;
+    std::tie(copy_plus_mean, copy_plus_stdev, copy_plus_min, copy_plus_max) = calculate_stats(copy_plus_latencies);
+   
+    double copy_mean, copy_stdev, copy_min, copy_max;
+    std::tie(copy_mean, copy_stdev, copy_min, copy_max) = calculate_stats(copy_durations);
 
     std::cout << "Test: " << test_name << std::endl;
     std::cout << "Data size: " << data_size << " bytes" << std::endl;
     std::cout << "Samples: " << num_samples << std::endl;
 
     std::cout << "纯传输时间 (publish->take):" << std::endl;
-    std::cout << "  Min latency: " << pure_min << " ns (" << pure_min / num_samples << " μs)" << std::endl;
-    std::cout << "  Max latency: " << pure_max << " ns (" << pure_max / num_samples << " μs)" << std::endl;
-    std::cout << "  Average latency: " << pure_mean << " ns (" << pure_mean / num_samples << " μs)" << std::endl;
-    std::cout << "  Standard deviation: " << pure_stdev << " ns (" << pure_stdev / num_samples << " μs)" << std::endl;
+    std::cout << "  Min latency: " << pure_min << " ns (" << pure_min / 1000 << " μs)" << std::endl;
+    std::cout << "  Max latency: " << pure_max << " ns (" << pure_max / 1000 << " μs)" << std::endl;
+    std::cout << "  Average latency: " << pure_mean << " ns (" << pure_mean / 1000 << " μs)" << std::endl;
+    std::cout << "  Standard deviation: " << pure_stdev << " ns (" << pure_stdev / 1000 << " μs)" << std::endl;
 
     std::cout << "拷贝+传输时间 (memset+publish->take):" << std::endl;
-    std::cout << "  Min latency: " << copy_plus_min << " ns (" << copy_plus_min / num_samples << " μs)" << std::endl;
-    std::cout << "  Max latency: " << copy_plus_max << " ns (" << copy_plus_max / num_samples << " μs)" << std::endl;
-    std::cout << "  Average latency: " << copy_plus_mean << " ns (" << copy_plus_mean / num_samples << " μs)" << std::endl;
-    std::cout << "  Standard deviation: " << copy_plus_stdev << " ns (" << copy_plus_stdev / num_samples << " μs)" << std::endl;
+    std::cout << "  Min latency: " << copy_plus_min << " ns (" << copy_plus_min / 1000 << " μs)" << std::endl;
+    std::cout << "  Max latency: " << copy_plus_max << " ns (" << copy_plus_max / 1000 << " μs)" << std::endl;
+    std::cout << "  Average latency: " << copy_plus_mean << " ns (" << copy_plus_mean / 1000 << " μs)" << std::endl;
+    std::cout << "  Standard deviation: " << copy_plus_stdev << " ns (" << copy_plus_stdev / 1000 << " μs)" << std::endl;
 
     std::cout << "纯拷贝时间 (memset):" << std::endl;
-    std::cout << "  Min latency: " << copy_min << " ns (" << copy_min / num_samples << " μs)" << std::endl;
-    std::cout << "  Max latency: " << copy_max << " ns (" << copy_max / num_samples << " μs)" << std::endl;
-    std::cout << "  Average latency: " << copy_mean << " ns (" << copy_mean / num_samples << " μs)" << std::endl;
-    std::cout << "  Standard deviation: " << copy_stdev << " ns (" << copy_stdev / num_samples << " μs)" << std::endl;
+    std::cout << "  Min latency: " << copy_min << " ns (" << copy_min / 1000 << " μs)" << std::endl;
+    std::cout << "  Max latency: " << copy_max << " ns (" << copy_max / 1000 << " μs)" << std::endl;
+    std::cout << "  Average latency: " << copy_mean << " ns (" << copy_mean / 1000 << " μs)" << std::endl;
+    std::cout << "  Standard deviation: " << copy_stdev << " ns (" << copy_stdev / 1000 << " μs)" << std::endl;
 
     std::cout << "----------------------------------------" << std::endl;
 }
