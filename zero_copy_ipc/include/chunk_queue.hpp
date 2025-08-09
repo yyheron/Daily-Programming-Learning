@@ -38,6 +38,7 @@ public:
     
     // 合并构造函数，默认参数为nullptr
     explicit ChunkQueue(const ShmStlAllocator<T>* alloc = nullptr) {
+        std::cout << "[ChunkQueue] Constructor called, allocator: " << std::boolalpha << (alloc != nullptr) << std::endl;
         InitEventFd();
         // if (alloc == nullptr) return;
         for (auto& slot : buffer) {
@@ -46,6 +47,7 @@ public:
     }
 
     ~ChunkQueue() {
+        std::cout << "[ChunkQueue] Destructor called" << std::endl;
         if (event_fd != -1) close(event_fd);
         if (std::is_trivially_destructible<T>::value) return;
         for (auto& slot : buffer) {
@@ -54,25 +56,35 @@ public:
     }
 
     void InitEventFd() {
+        std::cout << "[ChunkQueue] Initializing eventfd..." << std::endl;
         event_fd = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
+        std::cout << "[ChunkQueue] eventfd created with fd: " << event_fd << std::endl;
+
         if (event_fd == -1) {
-            std::cerr << "eventfd create failed" << std::endl;
+            std::cerr << "[ChunkQueue] eventfd create failed" << std::endl;
+        } else {
+            std::cout << "[ChunkQueue] eventfd initialized successfully" << std::endl;
         }
     }
 
-    // 队列大小仅支持2^n - 1；后续看是否有内存调整需求
-    static_assert(((N & (N + 1)) == 0),
-        "Queue size N must be in the form of 2^n - 1 (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
+    // 队列大小仅支持2^n；后续看是否有内存调整需求
+    static_assert(((N & (N - 1)) == 0),
+        "Queue size N must be in the form of 2^n (e.g., 1, 2, 4, 8, 16, 32, 64, 128, 256, 512...)");
     // push, pop_ptr, borrow_slot 已经被移除，因为 head 是由每个 subscriber 自己管理的
     
     void commit_slot() {
-        uint64_t expected = tail.load(std::memory_order_relaxed);
-        uint64_t desired = (expected + 1) & N;
-        while (!tail.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_relaxed)) {
-            desired = (expected + 1) & N;
+        std::cout << "[ChunkQueue] commit_slot called" << std::endl;
+        uint64_t expected = tail.load(std::memory_order_acquire);
+        uint64_t desired = (expected + 1) & (N - 1);
+
+        std::cout << "[ChunkQueue] commit_slot - expected: " << expected << ", desired: " << desired << std::endl;
+        while (!tail.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_acquire)) {
+            desired = (expected + 1) & (N - 1);
         }
+        std::cout << "[ChunkQueue] commit_slot - tail updated to: " << desired << std::endl;
         uint64_t val = 1;
         write(event_fd, &val, sizeof(val)); // 通知所有订阅者
+        std::cout << "[ChunkQueue] commit_slot - eventfd written with value: " << val << std::endl;
     }
 
 };

@@ -38,8 +38,8 @@ public:
 
     using OnMessageCallback = std::function<void(SubscribMessage)>;
 
-    static_assert(((N & (N + 1)) == 0),
-        "Queue size N must be in the form of 2^n - 1 (e.g., 7, 15, 255, 1023, 2047, 4095, 8191, 16383, 32767, 65535)");
+    static_assert(((N & (N - 1)) == 0),
+        "Queue size N must be in the form of 2^n (e.g., 1, 2, 4, 8, 16, 32, 64, 128, 256, 512...)");
 
     Subscriber(Topic topic, OnMessageCallback callback = nullptr, bool auto_start = true, int connect_timeout_ms = 50000)
         : topic_(topic)
@@ -135,13 +135,17 @@ public:
     }
 
     void take_continuously() {
+        std::cout << "[Subscriber] Starting continuous message processing..." << std::endl;
         auto it = registry_->find(subscriber_id_);
-        if (it == registry_->end()) return;
+        if (it == registry_->end()) {
+            std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] Error: Subscriber not found in registry." << std::endl;
+            return;
+        }
 
         while (running_.load(std::memory_order_relaxed)) {  // 添加退出条件检查
             // 1. 获取本地的 head 副本，用于循环判断
             uint64_t local_head = it->second.head.load(std::memory_order_acquire);
-
+            std::cout << "[Subscriber] Event loop - local_head: " << local_head << std::endl;
             while (local_head != queue_->tail && running_.load(std::memory_order_relaxed)) {  // 增加运行状态检查
                 // 队列不为空，读取数据
                 T* ptr = &queue_->buffer[local_head];
@@ -151,6 +155,7 @@ public:
                 }
 
                 try { // 调用用户提供的回调函数处理消息
+                    std::cout << "[Subscriber] Processing message in callback" << std::endl;
                     callback_(SubscribMessage(ptr));
                 } catch (const std::exception& e) {
                     std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ 
@@ -158,10 +163,11 @@ public:
                 }
 
                 // 原子地推进共享内存中的 head
-                it->second.head.store((local_head + 1) & N, std::memory_order_release);
+                it->second.head.store((local_head + 1) & (N - 1), std::memory_order_release);
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-                local_head = (local_head + 1) & N;
+                local_head = (local_head + 1) & (N - 1); // 更新本地 head 副本
+                std::cout << "[Subscriber] Updated local_head to: " << local_head << std::endl;
             }
 
             if (!running_) break;  // 提前退出检查
@@ -175,7 +181,15 @@ public:
             }
             // 消费 eventfd
             uint64_t val;
-            while (read(queue_->event_fd, &val, sizeof(val)) > 0);
+            // while (read(queue_->event_fd, &val, sizeof(val)) > 0);
+            size_t bytes_read = read(queue_->event_fd, &val, sizeof(val));
+            if (bytes_read <= 0) {
+                std::cerr << "[Subscriber][ERROR] Failed to read eventfd: " << strerror(errno) << ", bytes_read: " << bytes_read << std::endl;
+            } else {
+                std::cout << "[Subscriber] Read eventfd notification, val: " << val << ", bytes_read: " << bytes_read << std::endl;
+            }
+            // event_fd是publisher发布的时候write一次，
+            // 但每个subscriber在take_continuously的时候在buffer没有了消息之后，会把所以event_fd清空。这种逻辑是不对的。​
         }
     }
 
@@ -195,7 +209,7 @@ public:
                     return boost::none;
                 }
                 // 原子地推进共享内存中的 head
-                it->second.head.store((local_head + 1) & N, std::memory_order_release);
+                it->second.head.store((local_head + 1) & (N - 1), std::memory_order_release);
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
                 // 消费 eventfd 中的剩余事件，确保计数器清零
@@ -245,7 +259,7 @@ public:
         while (local_head != tail && count < max_messages) {
             T* ptr = &queue_->buffer[local_head];
             messages.emplace_back(ptr);
-            local_head = (local_head + 1) & N;
+            local_head = (local_head + 1) & (N - 1);
             ++count;
         }
 

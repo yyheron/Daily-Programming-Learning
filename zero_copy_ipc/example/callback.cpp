@@ -50,11 +50,12 @@ void test_callback_latency(const char* test_name, size_t data_size, int num_samp
             sample->timestamp_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();
             std::memset(sample->data, 'A', data_size);
             sample.publish();
-            // std::cout << test_name << " publish " << i << " message" << std::endl;
+            std::cout << test_name << " publish " << i << " message" << std::endl;
         } else {
             std::cerr << test_name << " - Unable to loan sample at sample " << i << ". due to " << static_cast<int>(loanResult.status()) << std::endl;
         }
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
     }
     // 等待一段时间以确保所有消息都被处理
     std::this_thread::sleep_for(std::chrono::seconds(10));
@@ -64,7 +65,7 @@ int main() {
     using namespace zero_copy_ipc;
     // 测试不同数据大小的延迟
     std::cout << "Testing 1K messages" << std::endl;
-    test_callback_latency<ExampleMessage1K>("Callback Test 1K", 1024, 100);
+    test_callback_latency<ExampleMessage1K>("Callback Test 1K", 1024, 1000);
 
     std::cout << "Testing 1M messages" << std::endl;
     test_callback_latency<ExampleMessage1M>("Callback Test 1M", 1024 * 1024, 100);
