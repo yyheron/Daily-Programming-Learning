@@ -9,6 +9,7 @@
 #include <type_traits>
 #include "ipc_utils.hpp"
 #include "pubsub_types.hpp"
+#include "loghelper.hpp"
 
 namespace zero_copy_ipc {
 
@@ -38,7 +39,7 @@ public:
     
     // 合并构造函数，默认参数为nullptr
     explicit ChunkQueue(const ShmStlAllocator<T>* alloc = nullptr) {
-        std::cout << "[ChunkQueue] Constructor called, allocator: " << std::boolalpha << (alloc != nullptr) << std::endl;
+        LOGINFOLINE("[ChunkQueue] Constructor called, allocator: %d", (alloc != nullptr));
         InitEventFd();
         // if (alloc == nullptr) return;
         for (auto& slot : buffer) {
@@ -47,7 +48,7 @@ public:
     }
 
     ~ChunkQueue() {
-        std::cout << "[ChunkQueue] Destructor called" << std::endl;
+        LOGINFOLINE("[ChunkQueue] Destructor called");
         if (event_fd != -1) close(event_fd);
         if (std::is_trivially_destructible<T>::value) return;
         for (auto& slot : buffer) {
@@ -56,14 +57,14 @@ public:
     }
 
     void InitEventFd() {
-        std::cout << "[ChunkQueue] Initializing eventfd..." << std::endl;
+        LOGINFOLINE("[ChunkQueue] Initializing eventfd...");
         event_fd = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
-        std::cout << "[ChunkQueue] eventfd created with fd: " << event_fd << std::endl;
+        LOGINFOLINE("[ChunkQueue] eventfd created with fd: %d", event_fd);
 
         if (event_fd == -1) {
-            std::cerr << "[ChunkQueue] eventfd create failed" << std::endl;
+            LOGERRLINE("[ChunkQueue] eventfd create failed");
         } else {
-            std::cout << "[ChunkQueue] eventfd initialized successfully" << std::endl;
+            LOGINFOLINE("[ChunkQueue] eventfd initialized successfully");
         }
     }
 
@@ -73,18 +74,18 @@ public:
     // push, pop_ptr, borrow_slot 已经被移除，因为 head 是由每个 subscriber 自己管理的
     
     void commit_slot() {
-        std::cout << "[ChunkQueue] commit_slot called" << std::endl;
+        LOGINFOLINE("[ChunkQueue] commit_slot called");
         uint64_t expected = tail.load(std::memory_order_acquire);
         uint64_t desired = (expected + 1) & (N - 1);
 
-        std::cout << "[ChunkQueue] commit_slot - expected: " << expected << ", desired: " << desired << std::endl;
+        LOGINFOLINE("[ChunkQueue] commit_slot - expected: %d, desired: %d", expected, desired);
         while (!tail.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_acquire)) {
             desired = (expected + 1) & (N - 1);
         }
-        std::cout << "[ChunkQueue] commit_slot - tail updated to: " << desired << std::endl;
+        LOGINFOLINE("[ChunkQueue] commit_slot - tail updated to: %d", desired);
         uint64_t val = 1;
         write(event_fd, &val, sizeof(val)); // 通知所有订阅者
-        std::cout << "[ChunkQueue] commit_slot - eventfd written with value: " << val << std::endl;
+        LOGINFOLINE("[ChunkQueue] commit_slot - eventfd written with value: %d", val);
     }
 
 };

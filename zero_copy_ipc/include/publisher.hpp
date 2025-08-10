@@ -11,6 +11,7 @@
 #include <string>
 #include <boost/optional.hpp>
 #include "ipc_utils.hpp"
+#include "loghelper.hpp"
 
 namespace zero_copy_ipc {
 
@@ -39,20 +40,20 @@ public:
     Publisher(Topic topic)
         : shm_mgr_(topic_to_string(topic) + "_shm", N * (sizeof(T) + 500), true) // 1. 只创建共享内存，不打开
     {
-        std::cout << "[Publisher] Creating publisher for topic: " << topic_to_string(topic) << ", queue size: " << N << std::endl;
+        LOGINFOLINE("[Publisher] Creating publisher for topic: %s, queue size: %zu", topic_to_string(topic).c_str(), N);
         // 1. 获取共享内存段管理器
         auto& segment = shm_mgr_.shm();
 
         // 2. 找到或构造 SubscriberRegistryMap
         const ShmAllocator registry_allocator(segment.get_segment_manager());
         registry_ = segment.find_or_construct<SubscriberRegistryMap>("SubscriberRegistry")(std::less<uint64_t>(), registry_allocator);
-        std::cout << "[Publisher] Subscriber registry initialized." << std::endl;
+        LOGINFOLINE("[Publisher] Subscriber registry initialized.");
         // 使用SFINAE分派到正确的创建函数
         create_queue(segment, std::integral_constant<bool, needs_stl_allocator<T>::value>());
         if(queue_) {
-            std::cout << "[Publisher] ChunkQueue created." << std::endl;
+            LOGINFOLINE("[Publisher] ChunkQueue created.");
         } else {
-            std::cerr << "[Publisher] Failed to create ChunkQueue." << std::endl;
+            LOGERRLINE("[Publisher] Failed to create ChunkQueue.");
         }
         // queue_ = create_queue(segment, 
         //              needs_stl_allocator<T>::value ? "ChunkQueueStl" : "ChunkQueueBasic",
@@ -75,7 +76,7 @@ public:
         //     // };
 
         cache_ = segment.find_or_construct<PublisherCache>("PublisherCache")();
-        std::cout << "[Publisher] PublisherCache created." << std::endl;
+        LOGINFOLINE("[Publisher] PublisherCache created.");
     }
 
     class LoanHandle {
@@ -175,13 +176,13 @@ public:
             }
         
             if (((queue_->tail + 1) & (N - 1)) == slowest_head) {
-                std::cout << "[Publisher] LoanBufferFull." << std::endl;
+                LOGERRLINE("[Publisher] LoanBufferFull.");
                 return LoanResult(IpcErrorType::LoanBufferFull);
             }
              // 更新缓存
             cache_->cached_slowest_head.store(slowest_head, std::memory_order_release);
         } else {
-            std::cout << "[Publisher] LoanNoSubscriber." << std::endl;
+            LOGERRLINE("[Publisher] LoanNoSubscriber.");
             return LoanResult(IpcErrorType::LoanNoSubscriber);
         }
     

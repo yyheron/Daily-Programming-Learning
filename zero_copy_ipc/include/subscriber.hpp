@@ -19,6 +19,7 @@
 #include <vector>
 #include <sys/epoll.h>
 #include "ipc_utils.hpp"
+#include "loghelper.hpp"
 
 namespace zero_copy_ipc {
 
@@ -70,26 +71,26 @@ public:
                     queue_ = queue_result.first;
                     registry_ = registry_result.first;
                     register_self();
-                    std::cout << "[Subscriber " << topic_to_string(topic)  << ", id" << subscriber_id_ << "] Connected successfully!" << std::endl;
+                    LOGINFOLINE("[Subscriber %s, id %d] Connected successfully!", topic_to_string(topic).c_str(), subscriber_id_);
                     break; // Successfully connected and initialized
                 } else {
                     // This is the problematic case: SHM exists, but objects don't.
-                    std::cout << "[Subscriber " << topic_to_string(topic)  << ", id" << subscriber_id_ << "] SHM opened, but objects not found. "
-                              << "Queue found: " << std::boolalpha << (queue_result.first != nullptr)
-                              << ", Registry found: " << std::boolalpha << (registry_result.first != nullptr)
-                              << ". Retrying..." << std::endl;
+                     LOGINFOLINE("[Subscriber %s, id%llu] SHM opened, but objects not found. Queue found: %s, Registry found: %s. Retrying...",
+                                topic_to_string(topic).c_str(), subscriber_id_, 
+                                (queue_result.first != nullptr) ? "true" : "false", 
+                                (registry_result.first != nullptr) ? "true" : "false");
                     shm_mgr_.reset();
                 }
 
             } catch (const boost::interprocess::interprocess_exception& e) {
                 // This is expected if the publisher hasn't started yet.
-                std::cout << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Failed to connect to publisher's shared memory: " << e.what() << std::endl;
+                LOGINFOLINE("[Subscriber %s, id%llu] Failed to connect to publisher's shared memory: %s", topic_to_string(topic).c_str(), subscriber_id_, e.what());
             }
 
             // Check for timeout
             auto elapsed = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
             if (elapsed > connect_timeout_ms) {
-                std::cerr << "[Subscriber " << topic_to_string(topic) << ", id" << subscriber_id_ << "] Failed to connect to publisher's shared memory: timeout." << std::endl;
+                LOGERRLINE("[Subscriber %s, id%llu] Failed to connect to publisher's shared memory: timeout.", topic_to_string(topic).c_str(), subscriber_id_);
                 throw std::runtime_error("Failed to connect to publisher's shared memory: timeout.");
             }
 
@@ -135,31 +136,28 @@ public:
     }
 
     void take_continuously() {
-        std::cout << "[Subscriber] Starting continuous message processing..." << std::endl;
         auto it = registry_->find(subscriber_id_);
         if (it == registry_->end()) {
-            std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] Error: Subscriber not found in registry." << std::endl;
+            LOGERRLINE("[Subscriber %s, id%llu] Error: Subscriber not found in registry.", topic_to_string(topic_).c_str(), subscriber_id_);
             return;
         }
 
         while (running_.load(std::memory_order_relaxed)) {  // 添加退出条件检查
             // 1. 获取本地的 head 副本，用于循环判断
             uint64_t local_head = it->second.head.load(std::memory_order_acquire);
-            std::cout << "[Subscriber] Event loop - local_head: " << local_head << std::endl;
             while (local_head != queue_->tail && running_.load(std::memory_order_relaxed)) {  // 增加运行状态检查
                 // 队列不为空，读取数据
                 T* ptr = &queue_->buffer[local_head];
                 if (!ptr) {
-                    std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
+                    LOGERRLINE("[Subscriber %s, id%llu] Error: Null pointer received.", topic_to_string(topic_).c_str(), subscriber_id_);
                     break;
                 }
 
                 try { // 调用用户提供的回调函数处理消息
-                    std::cout << "[Subscriber] Processing message in callback" << std::endl;
+                    LOGINFOLINE("[Subscriber %s, id%llu] Processing message in callback.", topic_to_string(topic_).c_str(), subscriber_id_);
                     callback_(SubscribMessage(ptr));
                 } catch (const std::exception& e) {
-                    std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ 
-                            << "] Handler exception: " << e.what() << std::endl;
+                    LOGERRLINE("[Subscriber %s, id%llu] Handler exception: %s", topic_to_string(topic_).c_str(), subscriber_id_, e.what());
                 }
 
                 // 原子地推进共享内存中的 head
@@ -167,7 +165,7 @@ public:
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
                 local_head = (local_head + 1) & (N - 1); // 更新本地 head 副本
-                std::cout << "[Subscriber] Updated local_head to: " << local_head << std::endl;
+                LOGINFOLINE("[Subscriber %s, id%llu] Updated local_head to: %llu", topic_to_string(topic_).c_str(), subscriber_id_, local_head);
             }
 
             if (!running_) break;  // 提前退出检查
@@ -176,7 +174,7 @@ public:
             epoll_event events[1];
             int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生：这里可以增加超时选项
             if (nfds <= 0) {
-                std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
+                LOGERRLINE("[Subscriber %s, id%llu] epoll_wait error.", topic_to_string(topic_).c_str(), subscriber_id_);
                 continue;
             }
             // 消费 eventfd
@@ -184,9 +182,9 @@ public:
             // while (read(queue_->event_fd, &val, sizeof(val)) > 0);
             size_t bytes_read = read(queue_->event_fd, &val, sizeof(val));
             if (bytes_read <= 0) {
-                std::cerr << "[Subscriber][ERROR] Failed to read eventfd: " << strerror(errno) << ", bytes_read: " << bytes_read << std::endl;
+                LOGERRLINE("[Subscriber %s, id%llu] Failed to read eventfd: %s, bytes_read: %llu", topic_to_string(topic_).c_str(), subscriber_id_, strerror(errno), bytes_read);
             } else {
-                std::cout << "[Subscriber] Read eventfd notification, val: " << val << ", bytes_read: " << bytes_read << std::endl;
+                LOGINFOLINE("[Subscriber %s, id%llu] Read eventfd notification, val: %llu, bytes_read: %llu", topic_to_string(topic_).c_str(), subscriber_id_, val, bytes_read);
             }
             // event_fd是publisher发布的时候write一次，
             // 但每个subscriber在take_continuously的时候在buffer没有了消息之后，会把所以event_fd清空。这种逻辑是不对的。​
@@ -205,7 +203,7 @@ public:
                 // 队列不为空，读取数据
                 T* ptr = &queue_->buffer[local_head];
                 if (!ptr) {
-                    std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] Error: Null pointer received." << std::endl;
+                    LOGERRLINE("[Subscriber %s, id%llu] Error: Null pointer received.", topic_to_string(topic_).c_str(), subscriber_id_);
                     return boost::none;
                 }
                 // 原子地推进共享内存中的 head
@@ -221,7 +219,7 @@ public:
                 ev.events = EPOLLIN | EPOLLET; // 使用边缘触发模式
                 ev.data.fd = queue_->event_fd;
                 if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, queue_->event_fd, &ev) == -1) {
-                    std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] epoll_ctl modify failed." << std::endl;
+                    LOGERRLINE("[Subscriber %s, id%llu] epoll_ctl modify failed.", topic_to_string(topic_).c_str(), subscriber_id_);
                     return boost::none;
                 }
 
@@ -232,7 +230,7 @@ public:
             epoll_event events[1];
             int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生
             if (nfds <= 0) {
-                std::cerr << "[Subscriber " << topic_to_string(topic_) << ", id" << subscriber_id_ << "] epoll_wait error." << std::endl;
+                LOGERRLINE("[Subscriber %s, id%llu] epoll_wait error.", topic_to_string(topic_).c_str(), subscriber_id_);
                 return boost::none;
             }
             // 消费 eventfd
@@ -293,7 +291,7 @@ private:
                 std::forward_as_tuple(queue_->tail, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
             );
         } else {
-            std::cerr << "Subscriber not connected to publisher's shared memory." << std::endl;
+            LOGERRLINE("Subscriber not connected to publisher's shared memory.");
         }
     }
 
