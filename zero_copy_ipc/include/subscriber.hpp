@@ -49,6 +49,7 @@ public:
         , queue_(nullptr)
         , registry_(nullptr)
         , epoll_fd_(-1)
+        , event_fd_(-1)
         , running_(true)
         , callback_(std::move(callback))
     {
@@ -95,16 +96,8 @@ public:
             }
 
             // Wait before retrying
-            std::this_thread::sleep_for(milliseconds(100));
+            std::this_thread::sleep_for(milliseconds(1000));
         }
-
-        epoll_fd_ = epoll_create1(0);
-        if (epoll_fd_ == -1) throw std::runtime_error("epoll_create1 failed");
-        epoll_event ev;
-        ev.events = EPOLLIN;
-        ev.data.fd = queue_->event_fd;
-        if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, queue_->event_fd, &ev) == -1)
-            throw std::runtime_error("epoll_ctl failed");
 
         // 自动启动
         if (auto_start) {
@@ -115,6 +108,9 @@ public:
     ~Subscriber() {
         stop();
         unregister_self();
+        if (event_fd_ != -1) {
+            close(event_fd_);
+        }
     }
 
     void start() {
@@ -128,10 +124,6 @@ public:
         running_.store(false, std::memory_order_relaxed);
         if (message_thread_.joinable()) {
             message_thread_.join();
-        }
-        if (epoll_fd_ != -1) {
-            close(epoll_fd_);
-            epoll_fd_ = -1;
         }
     }
 
@@ -180,7 +172,7 @@ public:
             // 消费 eventfd
             uint64_t val;
             // while (read(queue_->event_fd, &val, sizeof(val)) > 0);
-            size_t bytes_read = read(queue_->event_fd, &val, sizeof(val));
+            size_t bytes_read = read(event_fd, &val, sizeof(val));
             if (bytes_read <= 0) {
                 LOGERRLINE("[Subscriber %s, id%llu] Failed to read eventfd: %s, bytes_read: %llu", topic_to_string(topic_).c_str(), subscriber_id_, strerror(errno), bytes_read);
             } else {
@@ -212,13 +204,13 @@ public:
 
                 // 消费 eventfd 中的剩余事件，确保计数器清零
                 uint64_t val;
-                while (read(queue_->event_fd, &val, sizeof(val)) > 0);
+                while (read(event_fd, &val, sizeof(val)) > 0);
 
                 // 重置 epoll 监听，确保后续事件能被捕获
                 epoll_event ev;
                 ev.events = EPOLLIN | EPOLLET; // 使用边缘触发模式
-                ev.data.fd = queue_->event_fd;
-                if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, queue_->event_fd, &ev) == -1) {
+                ev.data.fd = event_fd;
+                if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, event_fd, &ev) == -1) {
                     LOGERRLINE("[Subscriber %s, id%llu] epoll_ctl modify failed.", topic_to_string(topic_).c_str(), subscriber_id_);
                     return boost::none;
                 }
@@ -235,7 +227,7 @@ public:
             }
             // 消费 eventfd
             uint64_t val;
-            while (read(queue_->event_fd, &val, sizeof(val)) > 0);
+            while (read(event_fd, &val, sizeof(val)) > 0);
         }
     }
 
@@ -279,6 +271,28 @@ private:
     }
 
     void register_self() {
+        event_fd_ = eventfd(0, EFD_NONBLOCK);
+        if (event_fd_ == -1) {
+            LOGERRLINE("[Subscriber %s, id%llu] eventfd create failed: %s", topic_to_string(topic).c_str(), subscriber_id_, strerror(errno));
+            throw std::runtime_error("eventfd create failed");
+        }
+
+        epoll_fd_ = epoll_create1(0);
+        if (epoll_fd_ == -1) {
+            LOGERRLINE("[Subscriber %s, id%llu] epoll_create1 failed: %s", topic_to_string(topic).c_str(), subscriber_id_, strerror(errno));
+            throw std::runtime_error("epoll_create1 failed");
+        }
+
+        epoll_event ev;
+        ev.events = EPOLLIN;
+        ev.data.fd = event_fd_;
+        if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &ev) == -1) {
+            LOGERRLINE("[Subscriber %s, id%llu] epoll_ctl failed: %s", topic_to_string(topic).c_str(), subscriber_id_, strerror(errno));
+            sleep(2);
+            close(event_fd_);
+            close(epoll_fd_);
+            throw std::runtime_error("epoll_ctl failed");
+        }
         if (registry_ && queue_) {
             // SubscriberInfo info = {queue_->tail, boost::posix_time::second_clock::universal_time()};
             // registry_->insert({subscriber_id_, info});
@@ -288,7 +302,9 @@ private:
             registry_->emplace(
                 std::piecewise_construct,
                 std::forward_as_tuple(subscriber_id_),
-                std::forward_as_tuple(queue_->tail, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
+                std::forward_as_tuple(queue_->tail, 
+                                      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
+                                      event_fd_)
             );
         } else {
             LOGERRLINE("Subscriber not connected to publisher's shared memory.");
@@ -296,6 +312,10 @@ private:
     }
 
     void unregister_self() {
+        if (epoll_fd_ != -1) {
+            close(epoll_fd_);
+            epoll_fd_ = -1;
+        }
         if (registry_) {
             registry_->erase(subscriber_id_);
         }
@@ -307,6 +327,7 @@ private:
     SubscriberRegistryMap* registry_;
     uint64_t subscriber_id_;
     int epoll_fd_;
+    int event_fd_;
     std::atomic<bool> running_;
     OnMessageCallback callback_;
     std::thread message_thread_;

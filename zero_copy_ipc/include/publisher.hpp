@@ -88,6 +88,19 @@ public:
             if (published_ || !ptr_) return false;
             queue_->commit_slot();
             published_ = true;
+            // 通知所有订阅者
+            if (registry_) {
+                uint64_t val = 1;
+                for (auto& pair : *registry_) {
+                    if (pair.second.event_fd != -1) {
+                        write(pair.second.event_fd, &val, sizeof(val));
+                        LOGINFOLINE("[Publisher] LoanHandle publish, event_fd: %d", pair.second.event_fd);
+                    }
+                }
+            } else {
+                LOGERRLINE("[Publisher] LoanHandle publish failed, registry_ is null.");
+                return false;
+            }
             return true;
         }
 

@@ -35,13 +35,10 @@ private:
 public:
     T buffer[N];
     alignas(64) std::atomic<uint64_t> tail{0};
-    int event_fd = -1; // 新增eventfd
     
     // 合并构造函数，默认参数为nullptr
     explicit ChunkQueue(const ShmStlAllocator<T>* alloc = nullptr) {
         LOGINFOLINE("[ChunkQueue] Constructor called, allocator: %d", (alloc != nullptr));
-        InitEventFd();
-        // if (alloc == nullptr) return;
         for (auto& slot : buffer) {
             construct_element(&slot, *alloc);
         }
@@ -49,22 +46,9 @@ public:
 
     ~ChunkQueue() {
         LOGINFOLINE("[ChunkQueue] Destructor called");
-        if (event_fd != -1) close(event_fd);
         if (std::is_trivially_destructible<T>::value) return;
         for (auto& slot : buffer) {
             slot.~T();  // 显式调用析构函数
-        }
-    }
-
-    void InitEventFd() {
-        LOGINFOLINE("[ChunkQueue] Initializing eventfd...");
-        event_fd = eventfd(0, EFD_NONBLOCK | EFD_SEMAPHORE);
-        LOGINFOLINE("[ChunkQueue] eventfd created with fd: %d", event_fd);
-
-        if (event_fd == -1) {
-            LOGERRLINE("[ChunkQueue] eventfd create failed");
-        } else {
-            LOGINFOLINE("[ChunkQueue] eventfd initialized successfully");
         }
     }
 
@@ -83,9 +67,6 @@ public:
             desired = (expected + 1) & (N - 1);
         }
         LOGINFOLINE("[ChunkQueue] commit_slot - tail updated to: %d", desired);
-        uint64_t val = 1;
-        write(event_fd, &val, sizeof(val)); // 通知所有订阅者
-        LOGINFOLINE("[ChunkQueue] commit_slot - eventfd written with value: %d", val);
     }
 
 };
