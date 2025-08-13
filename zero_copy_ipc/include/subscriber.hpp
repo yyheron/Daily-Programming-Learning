@@ -72,11 +72,11 @@ public:
                     queue_ = queue_result.first;
                     registry_ = registry_result.first;
                     register_self();
-                    LOGINFOLINE("[Subscriber %s, id %d] Connected successfully!", topic_to_string(topic).c_str(), subscriber_id_);
+                    LOGINFOLINE("[Subscriber %s, id %lu] Connected successfully!", topic_to_string(topic).c_str(), subscriber_id_);
                     break; // Successfully connected and initialized
                 } else {
                     // This is the problematic case: SHM exists, but objects don't.
-                     LOGINFOLINE("[Subscriber %s, id%llu] SHM opened, but objects not found. Queue found: %s, Registry found: %s. Retrying...",
+                     LOGINFOLINE("[Subscriber %s, id %lu] SHM opened, but objects not found. Queue found: %s, Registry found: %s. Retrying...",
                                 topic_to_string(topic).c_str(), subscriber_id_, 
                                 (queue_result.first != nullptr) ? "true" : "false", 
                                 (registry_result.first != nullptr) ? "true" : "false");
@@ -85,13 +85,13 @@ public:
 
             } catch (const boost::interprocess::interprocess_exception& e) {
                 // This is expected if the publisher hasn't started yet.
-                LOGINFOLINE("[Subscriber %s, id%llu] Failed to connect to publisher's shared memory: %s", topic_to_string(topic).c_str(), subscriber_id_, e.what());
+                LOGINFOLINE("[Subscriber %s, id %lu] Failed to connect to publisher's shared memory: %s", topic_to_string(topic).c_str(), subscriber_id_, e.what());
             }
 
             // Check for timeout
             auto elapsed = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
             if (elapsed > connect_timeout_ms) {
-                LOGERRLINE("[Subscriber %s, id%llu] Failed to connect to publisher's shared memory: timeout.", topic_to_string(topic).c_str(), subscriber_id_);
+                LOGERRLINE("[Subscriber %s, id %lu] Failed to connect to publisher's shared memory: timeout.", topic_to_string(topic).c_str(), subscriber_id_);
                 throw std::runtime_error("Failed to connect to publisher's shared memory: timeout.");
             }
 
@@ -130,7 +130,7 @@ public:
     void take_continuously() {
         auto it = registry_->find(subscriber_id_);
         if (it == registry_->end()) {
-            LOGERRLINE("[Subscriber %s, id%llu] Error: Subscriber not found in registry.", topic_to_string(topic_).c_str(), subscriber_id_);
+            LOGERRLINE("[Subscriber %s, id %lu] Error: Subscriber not found in registry.", topic_to_string(topic_).c_str(), subscriber_id_);
             return;
         }
 
@@ -141,15 +141,15 @@ public:
                 // 队列不为空，读取数据
                 T* ptr = &queue_->buffer[local_head];
                 if (!ptr) {
-                    LOGERRLINE("[Subscriber %s, id%llu] Error: Null pointer received.", topic_to_string(topic_).c_str(), subscriber_id_);
+                    LOGERRLINE("[Subscriber %s, id %lu] Error: Null pointer received.", topic_to_string(topic_).c_str(), subscriber_id_);
                     break;
                 }
 
                 try { // 调用用户提供的回调函数处理消息
-                    LOGINFOLINE("[Subscriber %s, id%llu] Processing message in callback.", topic_to_string(topic_).c_str(), subscriber_id_);
+                    LOGINFOLINE("[Subscriber %s, id %lu] Processing message in callback.", topic_to_string(topic_).c_str(), subscriber_id_);
                     callback_(SubscribMessage(ptr));
                 } catch (const std::exception& e) {
-                    LOGERRLINE("[Subscriber %s, id%llu] Handler exception: %s", topic_to_string(topic_).c_str(), subscriber_id_, e.what());
+                    LOGERRLINE("[Subscriber %s, id %lu] Handler exception: %s", topic_to_string(topic_).c_str(), subscriber_id_, e.what());
                 }
 
                 // 原子地推进共享内存中的 head
@@ -157,7 +157,7 @@ public:
                 it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
                 local_head = (local_head + 1) & (N - 1); // 更新本地 head 副本
-                LOGINFOLINE("[Subscriber %s, id%llu] Updated local_head to: %llu", topic_to_string(topic_).c_str(), subscriber_id_, local_head);
+                LOGINFOLINE("[Subscriber %s, id %lu] Updated local_head to: %lu", topic_to_string(topic_).c_str(), subscriber_id_, local_head);
             }
 
             if (!running_) break;  // 提前退出检查
@@ -166,17 +166,17 @@ public:
             epoll_event events[1];
             int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生：这里可以增加超时选项
             if (nfds <= 0) {
-                LOGERRLINE("[Subscriber %s, id%llu] epoll_wait error.", topic_to_string(topic_).c_str(), subscriber_id_);
+                LOGERRLINE("[Subscriber %s, id %lu] epoll_wait error.", topic_to_string(topic_).c_str(), subscriber_id_);
                 continue;
             }
             // 消费 eventfd
             uint64_t val;
             // while (read(queue_->event_fd, &val, sizeof(val)) > 0);
-            size_t bytes_read = read(event_fd, &val, sizeof(val));
+            size_t bytes_read = read(it->second.event_fd, &val, sizeof(val));
             if (bytes_read <= 0) {
-                LOGERRLINE("[Subscriber %s, id%llu] Failed to read eventfd: %s, bytes_read: %llu", topic_to_string(topic_).c_str(), subscriber_id_, strerror(errno), bytes_read);
+                LOGERRLINE("[Subscriber %s, id %lu] Failed to read eventfd: %s, bytes_read: %lu", topic_to_string(topic_).c_str(), subscriber_id_, strerror(errno), bytes_read);
             } else {
-                LOGINFOLINE("[Subscriber %s, id%llu] Read eventfd notification, val: %llu, bytes_read: %llu", topic_to_string(topic_).c_str(), subscriber_id_, val, bytes_read);
+                LOGINFOLINE("[Subscriber %s, id %lu] Read eventfd notification, val: %lu, bytes_read: %lu", topic_to_string(topic_).c_str(), subscriber_id_, val, bytes_read);
             }
             // event_fd是publisher发布的时候write一次，
             // 但每个subscriber在take_continuously的时候在buffer没有了消息之后，会把所以event_fd清空。这种逻辑是不对的。​
@@ -195,7 +195,7 @@ public:
                 // 队列不为空，读取数据
                 T* ptr = &queue_->buffer[local_head];
                 if (!ptr) {
-                    LOGERRLINE("[Subscriber %s, id%llu] Error: Null pointer received.", topic_to_string(topic_).c_str(), subscriber_id_);
+                    LOGERRLINE("[Subscriber %s, id %lu] Error: Null pointer received.", topic_to_string(topic_).c_str(), subscriber_id_);
                     return boost::none;
                 }
                 // 原子地推进共享内存中的 head
@@ -204,14 +204,14 @@ public:
 
                 // 消费 eventfd 中的剩余事件，确保计数器清零
                 uint64_t val;
-                while (read(event_fd, &val, sizeof(val)) > 0);
+                while (read(it->second.event_fd, &val, sizeof(val)) > 0);
 
                 // 重置 epoll 监听，确保后续事件能被捕获
                 epoll_event ev;
                 ev.events = EPOLLIN | EPOLLET; // 使用边缘触发模式
-                ev.data.fd = event_fd;
-                if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, event_fd, &ev) == -1) {
-                    LOGERRLINE("[Subscriber %s, id%llu] epoll_ctl modify failed.", topic_to_string(topic_).c_str(), subscriber_id_);
+                ev.data.fd = it->second.event_fd;
+                if (epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, it->second.event_fd, &ev) == -1) {
+                    LOGERRLINE("[Subscriber %s, id %lu] epoll_ctl modify failed.", topic_to_string(topic_).c_str(), subscriber_id_);
                     return boost::none;
                 }
 
@@ -222,12 +222,12 @@ public:
             epoll_event events[1];
             int nfds = epoll_wait(epoll_fd_, events, 1, -1); // 永久阻塞，直到有事件发生
             if (nfds <= 0) {
-                LOGERRLINE("[Subscriber %s, id%llu] epoll_wait error.", topic_to_string(topic_).c_str(), subscriber_id_);
+                LOGERRLINE("[Subscriber %s, id %lu] epoll_wait error.", topic_to_string(topic_).c_str(), subscriber_id_);
                 return boost::none;
             }
             // 消费 eventfd
             uint64_t val;
-            while (read(event_fd, &val, sizeof(val)) > 0);
+            while (read(it->second.event_fd, &val, sizeof(val)) > 0);
         }
     }
 
@@ -273,13 +273,13 @@ private:
     void register_self() {
         event_fd_ = eventfd(0, EFD_NONBLOCK);
         if (event_fd_ == -1) {
-            LOGERRLINE("[Subscriber %s, id%llu] eventfd create failed: %s", topic_to_string(topic).c_str(), subscriber_id_, strerror(errno));
+            LOGERRLINE("[Subscriber %s, id %lu] eventfd create failed: %s", topic_to_string(topic_).c_str(), subscriber_id_, strerror(errno));
             throw std::runtime_error("eventfd create failed");
         }
 
         epoll_fd_ = epoll_create1(0);
         if (epoll_fd_ == -1) {
-            LOGERRLINE("[Subscriber %s, id%llu] epoll_create1 failed: %s", topic_to_string(topic).c_str(), subscriber_id_, strerror(errno));
+            LOGERRLINE("[Subscriber %s, id %lu] epoll_create1 failed: %s", topic_to_string(topic_).c_str(), subscriber_id_, strerror(errno));
             throw std::runtime_error("epoll_create1 failed");
         }
 
@@ -287,7 +287,7 @@ private:
         ev.events = EPOLLIN;
         ev.data.fd = event_fd_;
         if (epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, event_fd_, &ev) == -1) {
-            LOGERRLINE("[Subscriber %s, id%llu] epoll_ctl failed: %s", topic_to_string(topic).c_str(), subscriber_id_, strerror(errno));
+            LOGERRLINE("[Subscriber %s, id %lu] epoll_ctl failed: %s", topic_to_string(topic_).c_str(), subscriber_id_, strerror(errno));
             sleep(2);
             close(event_fd_);
             close(epoll_fd_);

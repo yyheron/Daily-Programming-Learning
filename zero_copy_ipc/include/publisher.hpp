@@ -47,6 +47,11 @@ public:
         // 2. 找到或构造 SubscriberRegistryMap
         const ShmAllocator registry_allocator(segment.get_segment_manager());
         registry_ = segment.find_or_construct<SubscriberRegistryMap>("SubscriberRegistry")(std::less<uint64_t>(), registry_allocator);
+        if (!registry_) {
+            LOGERRLINE("[Publisher] Failed to create SubscriberRegistryMap!");
+            // 添加错误处理逻辑，如抛出异常或终止初始化
+            throw std::runtime_error("Failed to initialize subscriber registry");
+        }
         LOGINFOLINE("[Publisher] Subscriber registry initialized.");
         // 使用SFINAE分派到正确的创建函数
         create_queue(segment, std::integral_constant<bool, needs_stl_allocator<T>::value>());
@@ -81,24 +86,31 @@ public:
 
     class LoanHandle {
     public:
-        LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr)
-            : ptr_(ptr), queue_(queue), published_(false) {}
+        LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr, Publisher* publisher = nullptr)
+            : ptr_(ptr), queue_(queue), published_(false), publisher_(publisher)  {}
 
         bool publish() {
-            if (published_ || !ptr_) return false;
+            if (!ptr_ || !publisher_ || published_) {
+                if (!ptr_) LOGERRLINE("Publish failed: ptr_ is null");
+                if (!publisher_) LOGERRLINE("Publish failed: publisher_ is null");
+                if (published_) LOGERRLINE("Publish failed: already published");
+                sleep(2);
+                return false;
+            }
             queue_->commit_slot();
             published_ = true;
             // 通知所有订阅者
-            if (registry_) {
+            if (publisher_->registry_ && !publisher_->registry_->empty()) {
                 uint64_t val = 1;
-                for (auto& pair : *registry_) {
+                for (auto& pair : *publisher_->registry_) {
                     if (pair.second.event_fd != -1) {
                         write(pair.second.event_fd, &val, sizeof(val));
                         LOGINFOLINE("[Publisher] LoanHandle publish, event_fd: %d", pair.second.event_fd);
                     }
                 }
             } else {
-                LOGERRLINE("[Publisher] LoanHandle publish failed, registry_ is null.");
+                LOGERRLINE("[Publisher] LoanHandle publish failed, registry_ is null or empty.");
+
                 return false;
             }
             return true;
@@ -133,6 +145,7 @@ public:
         T* ptr_;
         ChunkQueue<T, N>* queue_;
         bool published_;
+        Publisher* publisher_;
     };
 
 
@@ -171,7 +184,7 @@ public:
         const uint64_t cached_head = cache_->cached_slowest_head.load(std::memory_order_acquire);
         if (((queue_->tail + 1) & (N - 1)) != cached_head) {
             T* slot = &queue_->buffer[queue_->tail];
-            return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
+            return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, this)));
         }
     
         // 如果缓存不命中，遍历所有订阅者，找到最慢的一个
@@ -200,7 +213,7 @@ public:
         }
     
         T* slot = &queue_->buffer[queue_->tail];
-        return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_)));
+        return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, this)));
     }
     
     // Todo: 生产者根据压力状态调整生产节奏

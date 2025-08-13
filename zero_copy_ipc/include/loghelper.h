@@ -7,11 +7,11 @@
 #endif
 
 #define LOGERRLINE(fmt, ...) \
-    fprintf(stderr, "[%s:%d] " fmt "\n", __LINE__, ##__VA_ARGS__);
+    fprintf(stderr, "[%d] " fmt "\n", __LINE__, ##__VA_ARGS__);
 
 #if LOG_LEVEL == 1
 #define LOGWARNLINE(fmt, ...) \
-    fprintf(stderr, "[%s:%d] " fmt "\n", __LINE__, ##__VA_ARGS__);
+    fprintf(stderr, "[%d] " fmt "\n", __LINE__, ##__VA_ARGS__);
 #else
 #define LOGWARNLINE(fmt, ...) \
     do {} while(0); // 空语句避免编译警告
@@ -19,7 +19,7 @@
 
 #if LOG_LEVEL == 1
 #define LOGINFOLINE(fmt, ...) \
-    fprintf(stdout, "[%s:%d] " fmt "\n", __LINE__, ##__VA_ARGS__);
+    fprintf(stdout, "[%d] " fmt "\n", __LINE__, ##__VA_ARGS__);
 #else
 #define LOGINFOLINE(fmt, ...) \
     do {} while(0); // 空语句避免编译警告
@@ -27,7 +27,7 @@
 
 #if LOG_LEVEL == 1
 #define LOGDEBUGLINE(fmt, ...) \
-    fprintf(stderr, "[%s:%d] " fmt "\n", __LINE__, ##__VA_ARGS__);
+    fprintf(stderr, "[%d] " fmt "\n", __LINE__, ##__VA_ARGS__);
 #else
 #define LOGDEBUGLINE(fmt, ...) \
     do {} while(0); // 空语句避免编译警告

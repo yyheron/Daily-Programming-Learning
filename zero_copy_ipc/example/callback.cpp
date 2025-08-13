@@ -33,10 +33,15 @@ auto callback = [](auto msg) {
 
 template<typename MessageT>
 void test_callback_latency(const char* test_name, size_t data_size, int num_samples = 100) {
+    std::cout << "Testing " << test_name << " with data size: " << data_size << " bytes" << std::endl;
     using namespace zero_copy_ipc;
 
     Publisher<MessageT> publisher(Topic::CameraToRobot);
+    std::cout << "Publisher created" << std::endl;
+    sleep(2);
     Subscriber<MessageT> subscriber(Topic::CameraToRobot, callback);
+    std::cout << "Subscriber created" << std::endl;
+    sleep(2);
 
     // 等待订阅者初始化
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -45,6 +50,7 @@ void test_callback_latency(const char* test_name, size_t data_size, int num_samp
     for (uint64_t i = 1; i <= num_samples; ++i) {
         auto loanResult = publisher.loan();
         if (loanResult.buffer().has_value()) {
+            std::cout << "Publisher loan sample " << i << std::endl;
             auto& sample = loanResult.buffer().value();
             sample->id = i;
             sample->timestamp_ns = std::chrono::high_resolution_clock::now().time_since_epoch().count();

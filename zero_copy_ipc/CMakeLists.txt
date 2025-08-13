@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF) # 推荐关闭编译器特定的扩展
 
+set(CMAKE_BUILD_TYPE Debug)  # 设置构建类型为Debug
+add_compile_options(-g -O0) # 添加调试标志：-g生成调试信息，-O0关闭优化
+
 # 查找 Boost 并指定所需组件
 find_package(Boost REQUIRED COMPONENTS system thread chrono)
 
@@ -31,6 +34,7 @@ add_executable(sample_callback example/callback.cpp)
 # target_link_libraries(sample_delivery PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 target_link_libraries(sample_callback PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 
+target_compile_options(sample_callback PRIVATE -g -O0)
 # 将 run.sh 脚本复制到构建目录
 # CMAKE_CURRENT_SOURCE_DIR 指向此 CMakeLists.txt 所在的目录
 set(RUN_SCRIPT_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/run.sh")
