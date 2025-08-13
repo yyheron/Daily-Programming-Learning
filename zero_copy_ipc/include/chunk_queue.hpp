@@ -1,9 +1,7 @@
 #pragma once
 
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
-#include <boost/interprocess/sync/interprocess_condition.hpp>
 #include <cstddef>
-#include <sys/eventfd.h>
 #include <unistd.h>
 #include <atomic>
 #include <type_traits>

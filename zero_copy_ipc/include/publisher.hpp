@@ -80,39 +80,52 @@ public:
         //     //     // 实现其他必要接口...
         //     // };
 
+        const SemaphoreMapAllocator semaphore_allocator(segment.get_segment_manager());
+        semaphore_ = segment.find_or_construct<SemaphoreMap>("SemaphoreMap")(std::less<uint64_t>(), semaphore_allocator);
+        if (!semaphore_) {
+            LOGERRLINE("[Publisher] Failed to create PublisherSemaphore!");
+            throw std::runtime_error("Failed to initialize publisher semaphore");
+        }
+        LOGINFOLINE("[Publisher] Constructor - semaphore_ pointer: %p", semaphore_);
+        LOGINFOLINE("[Publisher] PublisherSemaphore initialized.");
+
         cache_ = segment.find_or_construct<PublisherCache>("PublisherCache")();
+        if (!cache_) {
+            LOGERRLINE("[Publisher] Failed to create PublisherCache!");
+            throw std::runtime_error("Failed to initialize publisher cache");
+        }
         LOGINFOLINE("[Publisher] PublisherCache created.");
     }
 
     class LoanHandle {
     public:
-        LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr, Publisher* publisher = nullptr)
-            : ptr_(ptr), queue_(queue), published_(false), publisher_(publisher)  {}
+        LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr, SemaphoreMap* semaphore = nullptr)
+            : ptr_(ptr), queue_(queue), published_(false), semaphore_(semaphore)  {
+        }
 
         bool publish() {
-            if (!ptr_ || !publisher_ || published_) {
+            LOGINFOLINE("[LoanHandle] publish() - semaphore_ pointer: %p", semaphore_);
+            if (!ptr_ || !semaphore_ || published_) {
                 if (!ptr_) LOGERRLINE("Publish failed: ptr_ is null");
-                if (!publisher_) LOGERRLINE("Publish failed: publisher_ is null");
+                if (!semaphore_) LOGERRLINE("Publish failed: semaphore_ is null");
                 if (published_) LOGERRLINE("Publish failed: already published");
-                sleep(2);
                 return false;
             }
             queue_->commit_slot();
             published_ = true;
             // 通知所有订阅者
-            if (publisher_->registry_ && !publisher_->registry_->empty()) {
-                uint64_t val = 1;
-                for (auto& pair : *publisher_->registry_) {
-                    if (pair.second.event_fd != -1) {
-                        write(pair.second.event_fd, &val, sizeof(val));
-                        LOGINFOLINE("[Publisher] LoanHandle publish, event_fd: %d", pair.second.event_fd);
+            if (!semaphore_->empty()) {
+                for (auto& pair : *semaphore_) {
+                    try {
+                        pair.second.post();
+                    } catch (...) {
+                        LOGERRLINE("Invalid semaphore for subscriber %lu", pair.first);
                     }
                 }
             } else {
-                LOGERRLINE("[Publisher] LoanHandle publish failed, registry_ is null or empty.");
-
-                return false;
+                LOGERRLINE("[Publisher] LoanHandle publish failed, semaphore_ is null or empty.");
             }
+
             return true;
         }
 
@@ -122,10 +135,11 @@ public:
         LoanHandle(const LoanHandle&) = delete;
         LoanHandle& operator=(const LoanHandle&) = delete;
         LoanHandle(LoanHandle&& other) noexcept
-            : ptr_(other.ptr_), queue_(other.queue_), published_(other.published_) {
+            : ptr_(other.ptr_), queue_(other.queue_), published_(other.published_), semaphore_(other.semaphore_) {
             other.ptr_ = nullptr;
             other.queue_ = nullptr;
             other.published_ = true;
+            other.semaphore_ = nullptr;
         }
         LoanHandle& operator=(LoanHandle&& other) noexcept {
             if (this != &other) {
@@ -145,7 +159,7 @@ public:
         T* ptr_;
         ChunkQueue<T, N>* queue_;
         bool published_;
-        Publisher* publisher_;
+        SemaphoreMap* semaphore_;
     };
 
 
@@ -177,6 +191,7 @@ public:
 
     LoanResult loan() {
         if(!queue_) {
+            LOGERRLINE("[Publisher] LoanQueueNotCreated.");
             return LoanResult(IpcErrorType::LoanQueueNotCreated);
         }
 
@@ -184,7 +199,7 @@ public:
         const uint64_t cached_head = cache_->cached_slowest_head.load(std::memory_order_acquire);
         if (((queue_->tail + 1) & (N - 1)) != cached_head) {
             T* slot = &queue_->buffer[queue_->tail];
-            return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, this)));
+            return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, semaphore_)));
         }
     
         // 如果缓存不命中，遍历所有订阅者，找到最慢的一个
@@ -213,7 +228,7 @@ public:
         }
     
         T* slot = &queue_->buffer[queue_->tail];
-        return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, this)));
+        return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, semaphore_)));
     }
     
     // Todo: 生产者根据压力状态调整生产节奏
@@ -230,6 +245,7 @@ private:
     ChunkQueue<T, N>* queue_;
     SubscriberRegistryMap* registry_;
     PublisherCache* cache_;
+    SemaphoreMap* semaphore_;
 };
 
 } // namespace zero_copy_ipc
