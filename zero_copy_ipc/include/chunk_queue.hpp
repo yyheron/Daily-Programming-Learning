@@ -9,7 +9,7 @@
 #include <type_traits>
 #include "ipc_utils.hpp"
 #include "pubsub_types.hpp"
-#include "loghelper.hpp"
+#include "loghelper.h"
 
 namespace zero_copy_ipc {
 

@@ -19,7 +19,7 @@
 #include <vector>
 #include <sys/epoll.h>
 #include "ipc_utils.hpp"
-#include "loghelper.hpp"
+#include "loghelper.h"
 
 namespace zero_copy_ipc {
 

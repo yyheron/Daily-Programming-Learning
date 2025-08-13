@@ -11,7 +11,7 @@
 #include <string>
 #include <boost/optional.hpp>
 #include "ipc_utils.hpp"
-#include "loghelper.hpp"
+#include "loghelper.h"
 
 namespace zero_copy_ipc {
 
