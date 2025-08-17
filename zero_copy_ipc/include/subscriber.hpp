@@ -142,7 +142,7 @@ public:
             uint64_t local_head = it->second.head.load(std::memory_order_acquire);
             while (local_head != queue_->tail && running_.load(std::memory_order_relaxed)) {  // 增加运行状态检查
                 // 队列不为空，读取数据
-                T* ptr = &queue_->buffer[local_head];
+                T* ptr = &queue_->buffer[local_head].data;
                 if (!ptr) {
                     LOGERRLINE("[Subscriber %s, id %lu] Error: Null pointer received.", topic_to_string(topic_).c_str(), subscriber_id_);
                     break;
@@ -182,7 +182,7 @@ public:
 
             if (local_head != queue_->tail) {
                 // 队列不为空，读取数据
-                T* ptr = &queue_->buffer[local_head];
+                T* ptr = &queue_->buffer[local_head].data;
                 if (!ptr) {
                     LOGERRLINE("[Subscriber %s, id %lu] Error: Null pointer received.", topic_to_string(topic_).c_str(), subscriber_id_);
                     return boost::none;
@@ -213,7 +213,7 @@ public:
 
         int count = 0;
         while (local_head != tail && count < max_messages) {
-            T* ptr = &queue_->buffer[local_head];
+            T* ptr = &queue_->buffer[local_head].data;
             messages.emplace_back(ptr);
             local_head = (local_head + 1) & (N - 1);
             ++count;

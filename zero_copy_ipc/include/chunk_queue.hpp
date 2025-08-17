@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/interprocess/sync/interprocess_mutex.hpp>
+#include <boost/container/allocator_traits.hpp>
 #include <cstddef>
 #include <unistd.h>
 #include <atomic>
@@ -17,36 +18,44 @@ using namespace boost::interprocess;
 template<typename T, std::size_t N>
 struct ChunkQueue {
 private:
+    // Wrapper to prevent default construction of T
+    union Slot {
+        T data;
+        Slot() {} // Do not initialize data
+        ~Slot() {} // Do not destroy data
+    };
+
     using allocator_type = ShmStlAllocator<T>; // 添加分配器类型定义
     template <typename U = T>
     typename std::enable_if<needs_stl_allocator<U>::value>::type
     construct_element(void* slot, const allocator_type& alloc) {
-        new (slot) T(alloc);
+        new (slot) U(alloc);
     }
-
     template <typename U = T>
     typename std::enable_if<!needs_stl_allocator<U>::value>::type
     construct_element(void* slot, const allocator_type& /*alloc*/) {
-        new (slot) T{}; // 值初始化，比()更安全
+        new (slot) U{}; // 值初始化，比()更安全
     }
 
 public:
-    T buffer[N];
+    Slot buffer[N]; // Use a union to avoid default construction.
     alignas(64) std::atomic<uint64_t> tail{0};
     
     // 合并构造函数，默认参数为nullptr
-    explicit ChunkQueue(const ShmStlAllocator<T>* alloc = nullptr) {
-        LOGINFOLINE("[ChunkQueue] Constructor called, allocator: %d", (alloc != nullptr));
+    explicit ChunkQueue(const ShmStlAllocator<T>& alloc) {
         for (auto& slot : buffer) {
-            construct_element(&slot, *alloc);
+            construct_element(&slot.data, alloc);
         }
     }
+    
+    // 合并构造函数，默认参数为nullptr
+    explicit ChunkQueue() : ChunkQueue(ShmStlAllocator<T>{}) { }
 
     ~ChunkQueue() {
         LOGINFOLINE("[ChunkQueue] Destructor called");
         if (std::is_trivially_destructible<T>::value) return;
         for (auto& slot : buffer) {
-            slot.~T();  // 显式调用析构函数
+            slot.data.~T();  // 显式调用析构函数
         }
     }
 

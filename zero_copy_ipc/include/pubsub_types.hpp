@@ -130,4 +130,6 @@ using multiset = std::multiset<T, std::less<T>, ShmStlAllocator<T>>;
 template <typename Key, typename T>
 using multimap = std::multimap<Key, T, std::less<Key>, ShmStlAllocator<std::pair<const Key, T>>>;
 
+template <typename T1, typename T2>
+using pair = std::pair<T1, T2>;
 } // namespace zero_copy_ipc

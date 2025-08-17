@@ -198,7 +198,7 @@ public:
         // 快速检查缓存
         const uint64_t cached_head = cache_->cached_slowest_head.load(std::memory_order_acquire);
         if (((queue_->tail + 1) & (N - 1)) != cached_head) {
-            T* slot = &queue_->buffer[queue_->tail];
+            T* slot = &queue_->buffer[queue_->tail].data;
             return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, semaphore_)));
         }
     
@@ -227,7 +227,7 @@ public:
             return LoanResult(IpcErrorType::LoanNoSubscriber);
         }
     
-        T* slot = &queue_->buffer[queue_->tail];
+        T* slot = &queue_->buffer[queue_->tail].data;
         return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, semaphore_)));
     }
     

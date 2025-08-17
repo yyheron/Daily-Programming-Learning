@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <cstring>
+
 #include "ipc_utils.hpp"
 
 #include "pubsub_types.hpp"
@@ -31,17 +32,36 @@ using ExampleMessage20M = ExampleMessage<20 * 1024 * 1024>;
 // 以下给出共享内存中支持或不支持的类型
 // 以struct Foo为例
 // 当你的数据类型中包括了STL容器时，必须进行显式地指定allocator，并特化need_stl_allocator以便在共享内存中使用
-struct Foo {
-    vector<int> data;
+// struct ExampleMessageStlVector {
+//     uint64_t id;
+//     uint64_t timestamp_ns;
+//     vector<int> data;
 
-    template <typename Allocator>
-    explicit Foo(const Allocator& alloc) : data(alloc) {}
-    Foo() = delete;
+//     template <typename Allocator>
+//     explicit ExampleMessageStlVector(const Allocator& alloc) : data(alloc) {}
+//     ExampleMessageStlVector() = delete;
+// };
+
+// CRTP，以支持stl类型自动构造，分配器自动传递。这样定义是必须的
+struct ExampleMessageStlComplex : ShmConstructible<ExampleMessageStlComplex> {
+    vector<map<int, string>> complex_data;
+    deque<pair<int, vector<float>>> nested;
+    SHM_STL_TYPE_EXPAND(ExampleMessageStlComplex, complex_data, nested); // STL类型必要!
 };
 
-// 针对 Foo 特化
-template<>
-struct needs_stl_allocator<Foo> : std::true_type {};
+// 针对 ExampleMessageStlComplex 特化
+NEED_STL_ALLOCATOR(ExampleMessageStlComplex); // 类型中包括STL的必要！
+
+struct ExampleMessageStlVector : ShmConstructible<ExampleMessageStlVector> {
+    uint64_t id;
+    uint64_t timestamp_ns;
+    vector<int> data;
+    SHM_STL_TYPE_EXPAND(ExampleMessageStlVector, data); // STL类型必要!
+};
+// 针对 ExampleMessageStlVector 特化
+NEED_STL_ALLOCATOR(ExampleMessageStlVector); // 类型中包括STL的必要！
+
+
 
 // 支持的数据结构原则：
 // 一个对象要能在共享内存中安全存在，它必须是“自包含的”（Self-Contained）。

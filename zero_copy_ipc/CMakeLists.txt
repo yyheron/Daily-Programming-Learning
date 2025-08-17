@@ -24,6 +24,7 @@ include_directories(
 # add_executable(sample_subscriberB example/sample_subscriberB.cpp)
 # add_executable(sample_delivery example/main.cpp)
 add_executable(sample_callback example/callback.cpp)
+add_executable(sample_test_stl example/stl_type_test.cpp)
 
 # 链接库到目标
 # 在 Linux 上，Boost.Interprocess 通常需要链接 rt 库
@@ -33,8 +34,14 @@ add_executable(sample_callback example/callback.cpp)
 # target_link_libraries(sample_subscriberB PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 # target_link_libraries(sample_delivery PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 target_link_libraries(sample_callback PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
+target_link_libraries(sample_test_stl PRIVATE Boost::system Boost::thread Boost::chrono pthread rt)
 
+# target_compile_options(sample_publisher PRIVATE -g -O0)
+# target_compile_options(sample_subscriberA PRIVATE -g -O0)
+# target_compile_options(sample_subscriberB PRIVATE -g -O0)
+# target_compile_options(sample_delivery PRIVATE -g -O0)
 target_compile_options(sample_callback PRIVATE -g -O0)
+target_compile_options(sample_test_stl PRIVATE -g -O0)
 # 将 run.sh 脚本复制到构建目录
 # CMAKE_CURRENT_SOURCE_DIR 指向此 CMakeLists.txt 所在的目录
 set(RUN_SCRIPT_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/run.sh")
