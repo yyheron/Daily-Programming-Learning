@@ -25,37 +25,45 @@ private:
         ~Slot() {} // Do not destroy data
     };
 
-    using allocator_type = ShmStlAllocator<T>; // 添加分配器类型定义
+    // SFINAE overload for constructing elements that need an STL allocator.
     template <typename U = T>
-    typename std::enable_if<needs_stl_allocator<U>::value>::type
-    construct_element(void* slot, const allocator_type& alloc) {
+    auto construct_element(void* slot, const ShmStlAllocator<T>& alloc) -> std::enable_if_t<needs_stl_allocator<U>::value> {
         new (slot) U(alloc);
     }
+
+    // SFINAE overload for constructing elements that do not need an STL allocator.
     template <typename U = T>
-    typename std::enable_if<!needs_stl_allocator<U>::value>::type
-    construct_element(void* slot, const allocator_type& /*alloc*/) {
-        new (slot) U{}; // 值初始化，比()更安全
+    auto construct_element(void* slot) -> std::enable_if_t<!needs_stl_allocator<U>::value> {
+        new (slot) U{}; // Value initialization is safer than ()
     }
 
 public:
     Slot buffer[N]; // Use a union to avoid default construction.
     alignas(64) std::atomic<uint64_t> tail{0};
     
-    // 合并构造函数，默认参数为nullptr
+    // Constructor for types that NEED an allocator.
+    // Enabled only when needs_stl_allocator<T> is true.
+    template <typename U = T, typename = std::enable_if_t<needs_stl_allocator<U>::value>>
     explicit ChunkQueue(const ShmStlAllocator<T>& alloc) {
         for (auto& slot : buffer) {
             construct_element(&slot.data, alloc);
         }
     }
     
-    // 合并构造函数，默认参数为nullptr
-    explicit ChunkQueue() : ChunkQueue(ShmStlAllocator<T>{}) { }
+    // Default constructor for types that DO NOT need an allocator.
+    // Enabled only when needs_stl_allocator<T> is false.
+    template <typename U = T, typename = std::enable_if_t<!needs_stl_allocator<U>::value>>
+    explicit ChunkQueue() {
+        for (auto& slot : buffer) {
+            construct_element(&slot.data);
+        }
+    }
 
     ~ChunkQueue() {
         LOGINFOLINE("[ChunkQueue] Destructor called");
         if (std::is_trivially_destructible<T>::value) return;
         for (auto& slot : buffer) {
-            slot.data.~T();  // 显式调用析构函数
+            slot.data.~T();  // ��式调用析构函数
         }
     }
 

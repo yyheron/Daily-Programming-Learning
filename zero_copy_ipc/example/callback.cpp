@@ -71,7 +71,7 @@ int main() {
     using namespace zero_copy_ipc;
     // 测试不同数据大小的延迟
     std::cout << "Testing 1K messages" << std::endl;
-    test_callback_latency<ExampleMessage1K>("Callback Test 1K", 1024, 1000);
+    test_callback_latency<ExampleMessage1K>("Callback Test 1K", 1024, 100);
 
     std::cout << "Testing 1M messages" << std::endl;
     test_callback_latency<ExampleMessage1M>("Callback Test 1M", 1024 * 1024, 100);

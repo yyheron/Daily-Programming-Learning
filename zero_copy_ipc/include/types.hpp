@@ -42,17 +42,15 @@ using ExampleMessage20M = ExampleMessage<20 * 1024 * 1024>;
 //     ExampleMessageStlVector() = delete;
 // };
 
-// CRTP，以支持stl类型自动构造，分配器自动传递。这样定义是必须的
-struct ExampleMessageStlComplex : ShmConstructible<ExampleMessageStlComplex> {
+struct ExampleMessageStlComplex {
     vector<map<int, string>> complex_data;
     deque<pair<int, vector<float>>> nested;
     SHM_STL_TYPE_EXPAND(ExampleMessageStlComplex, complex_data, nested); // STL类型必要!
 };
-
 // 针对 ExampleMessageStlComplex 特化
 NEED_STL_ALLOCATOR(ExampleMessageStlComplex); // 类型中包括STL的必要！
 
-struct ExampleMessageStlVector : ShmConstructible<ExampleMessageStlVector> {
+struct ExampleMessageStlVector {
     uint64_t id;
     uint64_t timestamp_ns;
     vector<int> data;
