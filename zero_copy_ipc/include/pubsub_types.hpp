@@ -48,7 +48,7 @@ struct SubscriberInfo {
 };
 
 // The allocator for the map, which uses the shared memory segment manager
-using ShmAllocator = boost::interprocess::allocator<
+using SubscriberRegMapAllocator = boost::interprocess::allocator<
     std::pair<const uint64_t, SubscriberInfo>,
     boost::interprocess::managed_shared_memory::segment_manager
 >;
@@ -58,7 +58,7 @@ using SubscriberRegistryMap = boost::interprocess::map<
     uint64_t,
     SubscriberInfo,
     std::less<uint64_t>,
-    ShmAllocator
+    SubscriberRegMapAllocator
 >;
 
 using SemaphoreMapAllocator = boost::interprocess::allocator<

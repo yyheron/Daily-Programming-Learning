@@ -45,7 +45,7 @@ public:
         auto& segment = shm_mgr_.shm();
 
         // 2. 找到或构造 SubscriberRegistryMap
-        const ShmAllocator registry_allocator(segment.get_segment_manager());
+        const SubscriberRegMapAllocator registry_allocator(segment.get_segment_manager());
         registry_ = segment.find_or_construct<SubscriberRegistryMap>("SubscriberRegistry")(std::less<uint64_t>(), registry_allocator);
         if (!registry_) {
             LOGERRLINE("[Publisher] Failed to create SubscriberRegistryMap!");
