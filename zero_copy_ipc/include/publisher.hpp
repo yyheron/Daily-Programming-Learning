@@ -64,21 +64,9 @@ public:
         //              needs_stl_allocator<T>::value ? "ChunkQueueStl" : "ChunkQueueBasic",
         //              std::integral_constant<bool, needs_stl_allocator<T>::value>());
         //     // 代办项：
-        //     // 2. shared_memory.hpp切换为managed_mapped_file（动态扩容支持）
-        //     // 3. pulisher.cpp调整内存估算公式（避免容器扩容失败）
-        //     // 1. pubsub_types.hpp封装std::stack（完全隔离）
-        //     // 例如：
-        //     // template <typename T>
-        //     // struct stack {
-        //     // private:
-        //     //     deque<T> c;
-        //     // public:
-        //     //     explicit stack(const typename deque<T>::allocator_type& alloc) : c(alloc) {}
-        //     //     void push(const T& val) { c.push_back(val); }
-        //     //     void pop() { c.pop_back(); }
-        //     //     T& top() { return c.back(); }
-        //     //     // 实现其他必要接口...
-        //     // };
+        //     // 1. shared_memory.hpp切换为managed_mapped_file（动态扩容支持）
+        //     // 2. pulisher.cpp调整内存估算公式（避免容器扩容失败）
+        //     // 3. pubsub_types.hpp中的各个容器测试
 
         const SemaphoreMapAllocator semaphore_allocator(segment.get_segment_manager());
         semaphore_ = segment.find_or_construct<SemaphoreMap>("SemaphoreMap")(std::less<uint64_t>(), semaphore_allocator);
