@@ -22,7 +22,9 @@ public:
             // Publisher (creator) logic
             publisher_lock_ = std::make_unique<named_mutex>(open_or_create, (shm_name_ + "_pub_lock").c_str());
             if (!publisher_lock_->try_lock()) {
-                throw std::runtime_error("Publisher lock is already held. Only one Publisher is allowed per topic!");
+                shm_ = std::make_unique<managed_shared_memory>(open_only, shm_name_.c_str());
+                is_creator_ = false; // 本进程不是唯一创建者
+                return;
             }
 
             // Got the lock, now we are the unique publisher.

@@ -117,16 +117,20 @@ public:
     }
 
     void start() {
-        if (message_thread_.joinable()) {
-            return; // 已经启动
+        if (message_thread_.joinable() || heartbeat_thread_.joinable()) {
+            return; // 已启动
         }
         message_thread_ = std::thread(&Subscriber::take_continuously, this);
+        heartbeat_thread_ = std::thread(&Subscriber::heartbeat_loop, this);
     }
 
     void stop() {
         running_.store(false, std::memory_order_relaxed);
         if (message_thread_.joinable()) {
             message_thread_.join();
+        }
+        if (heartbeat_thread_.joinable()) {
+            heartbeat_thread_.join();
         }
     }
 
@@ -157,7 +161,6 @@ public:
 
                 // 原子地推进共享内存中的 head
                 it->second.head.store((local_head + 1) & (N - 1), std::memory_order_release);
-                it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
                 local_head = (local_head + 1) & (N - 1); // 更新本地 head 副本
                 LOGINFOLINE("[Subscriber %s, id %lu] Updated local_head to: %lu", topic_to_string(topic_).c_str(), subscriber_id_, local_head);
@@ -189,7 +192,7 @@ public:
                 }
                 // 原子地推进共享内存中的 head
                 it->second.head.store((local_head + 1) & (N - 1), std::memory_order_release);
-                it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+                it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 
                 return SubscribMessage(ptr);
             }
@@ -222,7 +225,7 @@ public:
         // 3. 批量推进 head
         if (count > 0) {
             it->second.head.store(local_head, std::memory_order_release);
-            it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
         }
 
         return messages;
@@ -247,7 +250,7 @@ private:
                 std::piecewise_construct,
                 std::forward_as_tuple(subscriber_id_),
                 std::forward_as_tuple(queue_->tail, 
-                                      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())
+                                      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count())
             );
             // semaphore_->emplace(
             //     std::piecewise_construct,
@@ -283,6 +286,22 @@ private:
         LOGINFOLINE("[Subscriber %s, id %lu] Unregistered successfully.", topic_to_string(topic_).c_str(), subscriber_id_);
     }
 
+    void heartbeat_loop() {
+        while (running_.load(std::memory_order_relaxed)) {
+            if (registry_) {
+                auto it = registry_->find(subscriber_id_);
+                if (it != registry_->end()) {
+                    // 定期更新心跳（每1秒）
+                    it->second.last_heartbeat = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+                    // it->second.last_heartbeat = get_current_time_ms();
+                    LOGDEBUGLINE("[Subscriber %s, id %lu] Heartbeat updated in background thread", 
+                        topic_to_string(topic_).c_str(), subscriber_id_);
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+    }
+
     Topic topic_;
     std::unique_ptr<SharedMemoryManager> shm_mgr_;
     ChunkQueue<T, N>* queue_;
@@ -292,5 +311,6 @@ private:
     std::atomic<bool> running_;
     OnMessageCallback callback_;
     std::thread message_thread_;
+    std::thread heartbeat_thread_;
 };
 } // namespace zero_copy_ipc
