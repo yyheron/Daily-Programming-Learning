@@ -6,6 +6,7 @@ common/
 common_protobuf/
 iceoryx/
 plugins/
+daemon/
 test.cpp
 test.exe
 tool/build/
