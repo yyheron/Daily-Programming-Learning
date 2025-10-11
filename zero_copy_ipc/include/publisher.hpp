@@ -6,7 +6,6 @@
 #include "chunk_queue.hpp"
 #include "topic_types.hpp"
 #include "ipc_error_types.hpp"
-#include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <string>
 #include <chrono>

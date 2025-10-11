@@ -5,7 +5,6 @@
 #include "chunk_queue.hpp"
 #include "ipc_utils.hpp"
 #include "topic_types.hpp"
-#include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/allocators/allocator.hpp>
 #include <string>
 #include <boost/optional.hpp>
@@ -47,79 +46,75 @@ public:
         , subscriber_id_(generate_unique_id())
         , queue_(nullptr)
         , registry_(nullptr)
+        , semaphore_(nullptr)
         , running_(true)
+        , connected_(false)
         , callback_(std::move(callback))
+        , connect_timeout_ms_(connect_timeout_ms)
     {
-        using namespace std::chrono;
-        auto start_time = steady_clock::now();
-
-        while (true) {
-            try {
-                // Try to open the shared memory
-                shm_mgr_ = std::make_unique<SharedMemoryManager>(topic_to_string(topic) + "_shm");
-
-                // If successful, find the queue and registry
-                auto& segment = shm_mgr_->shm();
-                
-                auto queue_result = segment.find<ChunkQueue<T, N>>(needs_stl_allocator<T>::value ? "ChunkQueueStl" : "ChunkQueueBasic");
-                
-                auto registry_result = segment.find<SubscriberRegistryMap>("SubscriberRegistry");
-
-                auto semaphore_result = segment.find<SemaphoreMap>("SemaphoreMap");
-
-                if (queue_result.first && registry_result.first && semaphore_result.first) {
-                    queue_ = queue_result.first;
-                    registry_ = registry_result.first;
-                    semaphore_ = semaphore_result.first;
-                    LOGINFOLINE("[Subscriber %s, id %lu] SemaphoreMap found at %p, size: %zu", 
-                        topic_to_string(topic).c_str(), subscriber_id_, 
-                        semaphore_, semaphore_->size());
-                    register_self();
-                    LOGINFOLINE("[Subscriber %s, id %lu] Connected successfully!", topic_to_string(topic).c_str(), subscriber_id_);
-                    break; // Successfully connected and initialized
-                } else {
-                    // This is the problematic case: SHM exists, but objects don't.
-                     LOGINFOLINE("[Subscriber %s, id %lu] SHM opened, but objects not found. Queue found: %s, Registry found: %s, Semaphore found: %s. Retrying...",
-                                topic_to_string(topic).c_str(), subscriber_id_, 
-                                (queue_result.first != nullptr) ? "true" : "false", 
-                                (registry_result.first != nullptr) ? "true" : "false", 
-                                (semaphore_result.first != nullptr) ? "true" : "false");
-                    LOGINFOLINE("[Subscriber %s, id %lu] SemaphoreMap find result: %p", 
-                                topic_to_string(topic).c_str(), subscriber_id_, semaphore_);
-                    shm_mgr_.reset();
-                }
-
-            } catch (const boost::interprocess::interprocess_exception& e) {
-                // This is expected if the publisher hasn't started yet.
-                LOGINFOLINE("[Subscriber %s, id %lu] Failed to connect to publisher's shared memory: %s", topic_to_string(topic).c_str(), subscriber_id_, e.what());
-            }
-
-            // Check for timeout
-            auto elapsed = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
-            if (elapsed > connect_timeout_ms) {
-                LOGERRLINE("[Subscriber %s, id %lu] Failed to connect to publisher's shared memory: timeout.", topic_to_string(topic).c_str(), subscriber_id_);
-                throw std::runtime_error("Failed to connect to publisher's shared memory: timeout.");
-            }
-
-            // Wait before retrying
-            std::this_thread::sleep_for(milliseconds(1000));
-        }
-
-        // 自动启动
+        LOGINFOLINE("[Subscriber %s, id %lu] Created", topic_to_string(topic).c_str(), subscriber_id_);
+        
+        // 异步连接，不阻塞构造函数
         if (auto_start) {
-            start();
+            connect();
         }
     }
 
     ~Subscriber() {
-        stop();
-        unregister_self();
+        disconnect();
+    }
+
+    // 连接接口
+    bool connect() {
+        if (connected_.load(std::memory_order_relaxed)) {
+            LOGINFOLINE("[Subscriber %s, id %lu] Already connected", topic_to_string(topic_).c_str(), subscriber_id_);
+            return true;
+        }
+
+        // 启动异步连接线程
+        if (connection_thread_.joinable()) {
+            connection_thread_.join();
+        }
+        
+        running_.store(true, std::memory_order_relaxed);
+        connection_thread_ = std::thread(&Subscriber::connect_async, this);
+        
+        return true;
+    }
+
+    // 断开连接接口
+    void disconnect() {
+        if (!connected_.load(std::memory_order_relaxed)) {
+            LOGINFOLINE("[Subscriber %s, id %lu] Already disconnected", topic_to_string(topic_).c_str(), subscriber_id_);
+            return;
+        }
+
+        // 停止心跳和消息接收
+        running_.store(false, std::memory_order_relaxed);
+        
+        if (message_thread_.joinable()) {
+            message_thread_.join();
+        }
+        if (heartbeat_thread_.joinable()) {
+            heartbeat_thread_.join();
+        }
+        
+        // 注意：不立即调用unregister_self()，而是让publisher通过心跳超时自动移除
+        connected_.store(false, std::memory_order_relaxed);
+        
+        LOGINFOLINE("[Subscriber %s, id %lu] Disconnected", topic_to_string(topic_).c_str(), subscriber_id_);
     }
 
     void start() {
+        if (!connected_.load(std::memory_order_relaxed)) {
+            LOGINFOLINE("[Subscriber %s, id %lu] Cannot start: not connected", topic_to_string(topic_).c_str(), subscriber_id_);
+            return;
+        }
+        
         if (message_thread_.joinable() || heartbeat_thread_.joinable()) {
             return; // 已启动
         }
+        
         message_thread_ = std::thread(&Subscriber::take_continuously, this);
         heartbeat_thread_ = std::thread(&Subscriber::heartbeat_loop, this);
     }
@@ -176,6 +171,11 @@ public:
     }
 
     boost::optional<SubscribMessage> take_one(int timeout_ms = -1) {
+        if (!connected_.load(std::memory_order_relaxed)) {
+            LOGINFOLINE("[Subscriber %s, id %lu] Cannot take_one: not connected", topic_to_string(topic_).c_str(), subscriber_id_);
+            return boost::none;
+        }
+        
         auto it = registry_->find(subscriber_id_);
         if (it == registry_->end()) return boost::none;
 
@@ -201,6 +201,11 @@ public:
     }
 
     std::vector<SubscribMessage> take_batch(int max_messages = 8) {
+        if (!connected_.load(std::memory_order_relaxed)) {
+            LOGINFOLINE("[Subscriber %s, id %lu] Cannot take_batch: not connected", topic_to_string(topic_).c_str(), subscriber_id_);
+            return {};
+        }
+        
         std::vector<SubscribMessage> messages;
         messages.reserve(max_messages);
 
@@ -231,12 +236,77 @@ public:
         return messages;
     }
 
+    // 获取连接状态
+    bool is_connected() const {
+        return connected_.load(std::memory_order_relaxed);
+    }
 
 private:
     uint64_t generate_unique_id() {
         static std::atomic<uint32_t> counter{0};
         uint64_t pid = getpid();
         return (pid << 32) | counter++;
+    }
+
+    // 异步连接方法
+    void connect_async() {
+        using namespace std::chrono;
+        auto start_time = steady_clock::now();
+
+        while (running_.load(std::memory_order_relaxed)) {
+            try {
+                // Try to open the shared memory
+                shm_mgr_ = std::make_unique<SharedMemoryManager>(topic_to_string(topic_) + "_shm");
+
+                // If successful, find the queue and registry
+                auto& segment = shm_mgr_->shm();
+                
+                auto queue_result = segment.find<ChunkQueue<T, N>>(needs_stl_allocator<T>::value ? "ChunkQueueStl" : "ChunkQueueBasic");
+                
+                auto registry_result = segment.find<SubscriberRegistryMap>("SubscriberRegistry");
+
+                auto semaphore_result = segment.find<SemaphoreMap>("SemaphoreMap");
+
+                if (queue_result.first && registry_result.first && semaphore_result.first) {
+                    queue_ = queue_result.first;
+                    registry_ = registry_result.first;
+                    semaphore_ = semaphore_result.first;
+                    LOGINFOLINE("[Subscriber %s, id %lu] SemaphoreMap found at %p, size: %zu", 
+                        topic_to_string(topic_).c_str(), subscriber_id_, 
+                        semaphore_, semaphore_->size());
+                    register_self();
+                    LOGINFOLINE("[Subscriber %s, id %lu] Connected successfully!", topic_to_string(topic_).c_str(), subscriber_id_);
+                    
+                    connected_.store(true, std::memory_order_relaxed);
+                    start(); // 连接成功后自动启动消息接收
+                    break; // Successfully connected and initialized
+                } else {
+                    // This is the problematic case: SHM exists, but objects don't.
+                     LOGINFOLINE("[Subscriber %s, id %lu] SHM opened, but objects not found. Queue found: %s, Registry found: %s, Semaphore found: %s. Retrying...",
+                                topic_to_string(topic_).c_str(), subscriber_id_, 
+                                (queue_result.first != nullptr) ? "true" : "false", 
+                                (registry_result.first != nullptr) ? "true" : "false", 
+                                (semaphore_result.first != nullptr) ? "true" : "false");
+                    LOGINFOLINE("[Subscriber %s, id %lu] SemaphoreMap find result: %p", 
+                                topic_to_string(topic_).c_str(), subscriber_id_, semaphore_);
+                    shm_mgr_.reset();
+                }
+
+            } catch (const boost::interprocess::interprocess_exception& e) {
+                // This is expected if the publisher hasn't started yet.
+                LOGINFOLINE("[Subscriber %s, id %lu] Failed to connect to publisher's shared memory: %s", topic_to_string(topic_).c_str(), subscriber_id_, e.what());
+            }
+
+            // Check for timeout
+            auto elapsed = duration_cast<milliseconds>(steady_clock::now() - start_time).count();
+            if (elapsed > connect_timeout_ms_) {
+                LOGERRLINE("[Subscriber %s, id %lu] Failed to connect to publisher's shared memory: timeout.", topic_to_string(topic_).c_str(), subscriber_id_);
+                break;
+            }
+
+            // Wait before retrying
+            std::this_thread::sleep_for(milliseconds(1000));
+        }
     }
 
     void register_self() {
@@ -287,7 +357,7 @@ private:
     }
 
     void heartbeat_loop() {
-        while (running_.load(std::memory_order_relaxed)) {
+        while (running_.load(std::memory_order_relaxed) && connected_.load(std::memory_order_relaxed)) {
             if (registry_) {
                 auto it = registry_->find(subscriber_id_);
                 if (it != registry_->end()) {
@@ -309,8 +379,11 @@ private:
     uint64_t subscriber_id_;
     SemaphoreMap* semaphore_;
     std::atomic<bool> running_;
+    std::atomic<bool> connected_;
     OnMessageCallback callback_;
     std::thread message_thread_;
     std::thread heartbeat_thread_;
+    std::thread connection_thread_;
+    int connect_timeout_ms_;
 };
 } // namespace zero_copy_ipc
