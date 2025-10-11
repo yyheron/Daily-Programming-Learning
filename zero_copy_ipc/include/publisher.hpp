@@ -85,33 +85,28 @@ public:
     class LoanHandle {
     public:
         LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr, SemaphoreMap* semaphore = nullptr)
-            : ptr_(ptr), queue_(queue), published_(false), semaphore_(semaphore)  {
+            : ptr_(ptr), queue_(queue), semaphore_(semaphore)  {
         }
 
-        bool publish() {
+        IpcErrorType publish() {
             LOGINFOLINE("[LoanHandle] publish() - semaphore_ pointer: %p", semaphore_);
-            if (!ptr_ || !semaphore_ || published_) {
-                if (!ptr_) LOGERRLINE("Publish failed: ptr_ is null");
-                if (!semaphore_) LOGERRLINE("Publish failed: semaphore_ is null");
-                if (published_) LOGERRLINE("Publish failed: already published");
-                return false;
+            if (!ptr_ || !semaphore_ || !queue_) {
+                if (!ptr_) return IpcErrorType::PublishSlotNotCreated;
+                if (!semaphore_) return IpcErrorType::PublishSemaphoreNotCreated;
+                if (!queue_) return IpcErrorType::PublishQueueNotCreated;
+                return IpcErrorType::NoError;
             }
             queue_->commit_slot();
-            published_ = true;
             // 通知所有订阅者
             if (!semaphore_->empty()) {
                 for (auto& pair : *semaphore_) {
-                    try {
-                        pair.second.post();
-                    } catch (...) {
-                        LOGERRLINE("Invalid semaphore for subscriber %lu", pair.first);
-                    }
+                    pair.second.post();
                 }
             } else {
-                LOGERRLINE("[Publisher] LoanHandle publish failed, semaphore_ is null or empty.");
+                return IpcErrorType::PublishNoSubscriber;
             }
 
-            return true;
+            return IpcErrorType::NoError;
         }
 
         T* operator->() { return ptr_; }
@@ -120,20 +115,19 @@ public:
         LoanHandle(const LoanHandle&) = delete;
         LoanHandle& operator=(const LoanHandle&) = delete;
         LoanHandle(LoanHandle&& other) noexcept
-            : ptr_(other.ptr_), queue_(other.queue_), published_(other.published_), semaphore_(other.semaphore_) {
+            : ptr_(other.ptr_), queue_(other.queue_), semaphore_(other.semaphore_) {
             other.ptr_ = nullptr;
             other.queue_ = nullptr;
-            other.published_ = true;
             other.semaphore_ = nullptr;
         }
         LoanHandle& operator=(LoanHandle&& other) noexcept {
             if (this != &other) {
                 ptr_ = other.ptr_;
                 queue_ = other.queue_;
-                published_ = other.published_;
+                semaphore_ = other.semaphore_;
                 other.ptr_ = nullptr;
                 other.queue_ = nullptr;
-                other.published_ = true;
+                other.semaphore_ = nullptr;
             }
             return *this;
         }
@@ -143,7 +137,6 @@ public:
     private:
         T* ptr_;
         ChunkQueue<T, N>* queue_;
-        bool published_;
         SemaphoreMap* semaphore_;
     };
 

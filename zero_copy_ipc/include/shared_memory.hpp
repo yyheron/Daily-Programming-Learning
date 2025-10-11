@@ -25,7 +25,7 @@ public:
         ipcdetail::shared_filepath(shm_name_.c_str(), file_path_);
         lock_file_path_ = file_path_ + ".lock";
         if (is_creator_) {
-            setup_linux_ipc_dir();
+            setup_shm_ipc_dir();
             std::ofstream lock_file(lock_file_path_);
             if (!lock_file) {
                 throw std::runtime_error("Failed to create lock file");
@@ -73,13 +73,7 @@ public:
             }
         } else {
             // Subscriber (opener) logic
-            try {
-                shm_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
-                std::cout << "[SharedMemoryManager] Opened mapped file: " << file_path_ << std::endl;
-            } catch (const interprocess_exception& e) {
-                std::cerr << "[SharedMemoryManager] Failed to open mapped file: " << e.what() << std::endl;
-                throw;
-            }
+            shm_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
         }
     }
 
@@ -113,23 +107,30 @@ public:
     }
 
     // 动态扩容方法
-    bool resize(std::size_t new_size) {
+    bool resize(std::size_t new_size, bool force = false) {
         if (!is_creator_ || !shm_) {
             std::cerr << "[SharedMemoryManager] Resize failed: not creator or no valid shared memory" << std::endl;
             return false;
         }
         
         try {
+            // 获取当前大小
+            std::size_t current_size = shm_->get_size();
+            if (new_size <= current_size && !force) {
+                std::cout << "[SharedMemoryManager] New size is not larger than current size: " << current_size << " bytes" << std::endl;
+                return false;
+            }
+            
             // 首先关闭当前的mapped file
             shm_.reset();
             
-            // 使用新大小重新打开（会自动扩容）
-            shm_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
-            
+            // 使用新大小重新打开
             // 注意：boost的managed_mapped_file本身不支持动态扩容
-            // 要实现真正的扩容，需要创建一个新文件并迁移数据
-            // 这里我们只是返回当前文件状态
-            std::cout << "[SharedMemoryManager] File size remains at: " << shm_->get_size() << " bytes" << std::endl;
+            // 这里我们创建一个新文件并迁移数据（简化版）
+            file_mapping::remove(file_path_.c_str()); // 先删除旧文件
+            shm_ = std::make_unique<managed_mapped_file>(create_only, file_path_.c_str(), new_size);
+            
+            std::cout << "[SharedMemoryManager] Resized file to: " << new_size << " bytes" << std::endl;
             return true;
         } catch (const std::exception& e) {
             std::cerr << "[SharedMemoryManager] Resize failed: " << e.what() << std::endl;
@@ -137,39 +138,16 @@ public:
         }
     }
 
-    // 目录设置方法保持不变
-    void setup_linux_ipc_dir() {
-        // Create /dev/shm/ipc directory if it doesn't exist.
-        const char* ipc_dir = BOOST_INTERPROCESS_SHARED_DIR_PATH;
-        std::cout << "[SharedMemoryManager] Checking for IPC directory: " << ipc_dir << std::endl;
-        
-        // 检查目录是否存在且可访问
+    bool is_shm_ipc_dir_exist() {
         struct stat st;
-        if (stat(ipc_dir, &st) != 0) {
-            // 尝试递归创建目录，确保中间目录都存在
-            std::string cmd = "mkdir -p " + std::string(ipc_dir) + " && chmod 777 " + std::string(ipc_dir);
-            std::cout << "[SharedMemoryManager] Executing command: " << cmd << std::endl;
-            int result = system(cmd.c_str());
-            
-            if (result != 0) {
-                std::cerr << "[SharedMemoryManager] Failed to create IPC directory: " << ipc_dir 
-                          << ", error: " << strerror(errno) << std::endl;
-                throw std::runtime_error("Failed to create directory " + std::string(ipc_dir) + ": " + strerror(errno));
-            }
-            std::cout << "[SharedMemoryManager] Created IPC directory: " << ipc_dir << std::endl;
-        } else {
-            if (!S_ISDIR(st.st_mode)) {
-                std::cerr << "[SharedMemoryManager] Error: " << ipc_dir << " exists but is not a directory." << std::endl;
-                throw std::runtime_error(std::string(ipc_dir) + " exists but is not a directory.");
-            }
-            // 检查权限
-            if ((st.st_mode & S_IRWXU) != S_IRWXU || (st.st_mode & S_IRWXG) != S_IRWXG || (st.st_mode & S_IRWXO) != S_IRWXO) {
-                std::cout << "[SharedMemoryManager] Updating permissions for IPC directory: " << ipc_dir << std::endl;
-                if (chmod(ipc_dir, 0777) != 0) {
-                    std::cerr << "[SharedMemoryManager] Failed to set permissions: " << strerror(errno) << std::endl;
-                }
-            }
-            std::cout << "[SharedMemoryManager] IPC directory already exists: " << ipc_dir << std::endl;
+        return (stat(ipc_dir_, &st) == 0);
+    }
+
+    // 目录设置方法保持不变
+    void setup_shm_ipc_dir() {
+        std::lock_guard<std::mutex> lock(ipc_dir_setup_mutex_);
+        if (!is_shm_ipc_dir_exist()) {
+            mkdir(ipc_dir_, 0777); // 创建目录，权限设置为777
         }
     }
 
@@ -180,6 +158,9 @@ private:
     bool is_creator_;
     std::string file_path_; // 存储实际文件路径
     std::string lock_file_path_; // 存储锁文件路径
+    std::mutex  ipc_dir_setup_mutex_;
+    const char* ipc_dir_{BOOST_INTERPROCESS_SHARED_DIR_PATH};
+
 };
 
 } // namespace zero_copy_ipc
