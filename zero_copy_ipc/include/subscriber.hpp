@@ -1,7 +1,7 @@
 #pragma once
 
 #include "shared_memory.hpp"
-#include "pubsub_types.hpp"
+#include "shared_memory_allocator.hpp"
 #include "chunk_queue.hpp"
 #include "ipc_utils.hpp"
 #include "topic_types.hpp"
@@ -70,15 +70,14 @@ public:
             LOGINFOLINE("[Subscriber %s, id %lu] Already connected", topic_to_string(topic_).c_str(), subscriber_id_);
             return true;
         }
+        
+        running_.store(true, std::memory_order_relaxed);
+        connection_thread_ = std::thread(&Subscriber::connect_async, this);
 
         // 启动异步连接线程
         if (connection_thread_.joinable()) {
             connection_thread_.join();
         }
-        
-        running_.store(true, std::memory_order_relaxed);
-        connection_thread_ = std::thread(&Subscriber::connect_async, this);
-        
         return true;
     }
 
@@ -148,7 +147,7 @@ public:
                 }
 
                 try { // 调用用户提供的回调函数处理消息
-                    LOGINFOLINE("[Subscriber %s, id %lu] Processing message in callback.", topic_to_string(topic_).c_str(), subscriber_id_);
+                    // LOGINFOLINE("[Subscriber %s, id %lu] Processing message in callback.", topic_to_string(topic_).c_str(), subscriber_id_);
                     callback_(SubscribMessage(ptr));
                 } catch (const std::exception& e) {
                     LOGERRLINE("[Subscriber %s, id %lu] Handler exception: %s", topic_to_string(topic_).c_str(), subscriber_id_, e.what());
@@ -158,7 +157,7 @@ public:
                 it->second.head.store((local_head + 1) & (N - 1), std::memory_order_release);
 
                 local_head = (local_head + 1) & (N - 1); // 更新本地 head 副本
-                LOGINFOLINE("[Subscriber %s, id %lu] Updated local_head to: %lu", topic_to_string(topic_).c_str(), subscriber_id_, local_head);
+                // LOGINFOLINE("[Subscriber %s, id %lu] Updated local_head to: %lu", topic_to_string(topic_).c_str(), subscriber_id_, local_head);
             }
 
             if (!running_) break;  // 提前退出检查
@@ -166,7 +165,6 @@ public:
             // 等待信号量
             auto sem = semaphore_->find(subscriber_id_);
             sem->second.wait();
-            LOGDEBUGLINE("[Subscriber %s, id %lu] Woke up from semaphore wait.", topic_to_string(topic_).c_str(), subscriber_id_);
         }
     }
 
@@ -259,8 +257,8 @@ private:
                 shm_mgr_ = std::make_unique<SharedMemoryManager>(topic_to_string(topic_) + "_shm");
 
                 // If successful, find the queue and registry
-                auto& segment = shm_mgr_->shm();
-                
+                auto& segment = shm_mgr_->segment();
+
                 auto queue_result = segment.find<ChunkQueue<T, N>>(needs_stl_allocator<T>::value ? "ChunkQueueStl" : "ChunkQueueBasic");
                 
                 auto registry_result = segment.find<SubscriberRegistryMap>("SubscriberRegistry");
@@ -307,6 +305,7 @@ private:
             // Wait before retrying
             std::this_thread::sleep_for(milliseconds(1000));
         }
+        LOGINFOLINE("[Subscriber %s, id %lu] Connected finished!", topic_to_string(topic_).c_str(), subscriber_id_);
     }
 
     void register_self() {

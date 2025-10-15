@@ -7,7 +7,7 @@
 #include <atomic>
 #include <type_traits>
 #include "ipc_utils.hpp"
-#include "pubsub_types.hpp"
+#include "shared_memory_allocator.hpp"
 #include "loghelper.h"
 
 namespace zero_copy_ipc {
@@ -63,7 +63,7 @@ public:
         LOGINFOLINE("[ChunkQueue] Destructor called");
         if (std::is_trivially_destructible<T>::value) return;
         for (auto& slot : buffer) {
-            slot.data.~T();  // ��式调用析构函数
+            slot.data.~T();  // 显式调用析构函数
         }
     }
 
@@ -73,15 +73,12 @@ public:
     // push, pop_ptr, borrow_slot 已经被移除，因为 head 是由每个 subscriber 自己管理的
     
     void commit_slot() {
-        LOGINFOLINE("[ChunkQueue] commit_slot called");
         uint64_t expected = tail.load(std::memory_order_acquire);
         uint64_t desired = (expected + 1) & (N - 1);
 
-        LOGINFOLINE("[ChunkQueue] commit_slot - expected: %d, desired: %d", expected, desired);
         while (!tail.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_acquire)) {
             desired = (expected + 1) & (N - 1);
         }
-        LOGINFOLINE("[ChunkQueue] commit_slot - tail updated to: %d", desired);
     }
 
 };

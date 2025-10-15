@@ -1,10 +1,7 @@
 #pragma once
 
 #include <type_traits>
-#include <boost/interprocess/managed_shared_memory.hpp>
-#include <boost/interprocess/allocators/allocator.hpp>
-#include "chunk_queue.hpp"
-#include "pubsub_types.hpp"
+#include <utility>
 
 namespace zero_copy_ipc {
 
@@ -17,13 +14,13 @@ struct needs_stl_allocator : std::false_type {};
 template <> \
 struct needs_stl_allocator<T> : std::true_type {}
 
-// 需要为pair特化needs_stl_allocator（当包含容器成员时）
-template <typename T1, typename T2>
-struct needs_stl_allocator<pair<T1, T2>> {
-    static constexpr bool value = 
-        needs_stl_allocator<T1>::value || 
-        needs_stl_allocator<T2>::value;
-};
+// // 需要为pair特化needs_stl_allocator（当包含容器成员时）
+// template <typename T1, typename T2>
+// struct needs_stl_allocator<std::pair<T1, T2>> {
+//     static constexpr bool value = 
+//         needs_stl_allocator<T1>::value || 
+//         needs_stl_allocator<T2>::value;
+// };
 
 #define EXPAND(x) x
 

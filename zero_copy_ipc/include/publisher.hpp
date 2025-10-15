@@ -15,6 +15,7 @@
 
 namespace zero_copy_ipc {
 
+
 using namespace boost::interprocess;
 
 template<typename T, std::size_t N = DEFAULT_QUEUE_SIZE>
@@ -23,17 +24,27 @@ public:
     // 队列大小仅支持2^n；后续看是否有内存调整需求
     static_assert(((N & (N - 1)) == 0),
         "Queue size N must be in the form of 2^n (e.g., 1, 2, 4, 8, 16, 32, 64, 128, 256, 512...)");
+ 
+    // 段管理器更新回调 -> 更新publisher需要的segment所需大小
+    void segment_update_callback(){
+        // 根据当前stl大小，计算此时请求扩展的容器类型，实际需要的大小，更新其grow大小给shm_mgr_，
+        // 并最终传给DynamicShmAllocator的allocate函数
+        // todo: calulate grow size
+        // this->resize(grow_size_);
+        // this->shm_mgr_.resize(grow_size_);
+    };
 
     // SFINAE重载：处理需要STL分配器的情况
     template <typename Shm>
-    void create_queue(Shm& shm, std::true_type /* needs_allocator */) {
-        const ShmStlAllocator<T> allocator(shm.get_segment_manager());
+    void create_queue(Shm& shm, Topic topic, std::true_type /* needs_allocator */) {
+        const ShmStlAllocator<T> allocator(&shm_mgr_/*, [this]() { segment_update_callback(); }*/);
+
         queue_ = shm.template find_or_construct<ChunkQueue<T, N>>("ChunkQueueStl")(allocator);
     }
 
     // SFINAE重载：处理不需要STL分配器的情况
     template <typename Shm>
-    void create_queue(Shm& shm, std::false_type /* needs_allocator */) {
+    void create_queue(Shm& shm, Topic topic, std::false_type /* needs_allocator */) {
         queue_ = shm.template find_or_construct<ChunkQueue<T, N>>("ChunkQueueBasic")();
     }
     
@@ -41,8 +52,8 @@ public:
         : shm_mgr_(topic_to_string(topic) + "_shm", N * (sizeof(T) + 500), true) // 1. 只创建共享内存，不打开
     {
         LOGINFOLINE("[Publisher] Creating publisher for topic: %s, queue size: %zu", topic_to_string(topic).c_str(), N);
-        // 获取共享内存段管理器
-        auto& segment = shm_mgr_.shm();
+        // 获取共享内存段
+        auto& segment = shm_mgr_.segment();
 
         // 找到或构造 SubscriberRegistryMap
         const SubscriberRegMapAllocator registry_allocator(segment.get_segment_manager());
@@ -52,9 +63,8 @@ public:
             // 添加错误处理逻辑，如抛出异常或终止初始化
             throw std::runtime_error("Failed to initialize subscriber registry");
         }
-
         // 使用SFINAE分派到正确的创建函数，以创建ChunkQueue
-        create_queue(segment, std::integral_constant<bool, needs_stl_allocator<T>::value>());
+        create_queue(segment, topic, std::integral_constant<bool, needs_stl_allocator<T>::value>());
         if(!queue_) {
             LOGERRLINE("[Publisher] Failed to create ChunkQueue.");
         }
@@ -62,7 +72,7 @@ public:
         //              needs_stl_allocator<T>::value ? "ChunkQueueStl" : "ChunkQueueBasic",
         //              std::integral_constant<bool, needs_stl_allocator<T>::value>());
         //     // 代办项：
-        //     // 1. shared_memory.hpp切换为managed_mapped_file（动态扩容支持）
+        //     // 1. shared_memory.hpp切换为managed_mapped_file（动态扩容支持）√
         //     // 2. pulisher.cpp调整内存估算公式（避免容器扩容失败）
         //     // 3. pubsub_types.hpp中的各个容器测试
 
@@ -85,11 +95,12 @@ public:
     class LoanHandle {
     public:
         LoanHandle(T* ptr = nullptr, ChunkQueue<T, N>* queue = nullptr, SemaphoreMap* semaphore = nullptr)
-            : ptr_(ptr), queue_(queue), semaphore_(semaphore)  {
+            : ptr_(ptr), queue_(queue), semaphore_(semaphore)
+        {
+
         }
 
         IpcErrorType publish() {
-            LOGINFOLINE("[LoanHandle] publish() - semaphore_ pointer: %p", semaphore_);
             if (!ptr_ || !semaphore_ || !queue_) {
                 if (!ptr_) return IpcErrorType::PublishSlotNotCreated;
                 if (!semaphore_) return IpcErrorType::PublishSemaphoreNotCreated;
@@ -132,14 +143,13 @@ public:
             return *this;
         }
 
-        ~LoanHandle(){}
+        ~LoanHandle() {}
 
     private:
         T* ptr_;
         ChunkQueue<T, N>* queue_;
         SemaphoreMap* semaphore_;
     };
-
 
     class LoanResult {
     public:
@@ -222,17 +232,43 @@ public:
         T* slot = &queue_->buffer[queue_->tail].data;
         return LoanResult(IpcErrorType::NoError, std::move(LoanHandle(slot, queue_, semaphore_)));
     }
-    
-    // Todo: 生产者根据压力状态调整生产节奏
-    // void publisher_loop() {
-    //     while (running) {
-    //         float max_pressure = query_subscriber_pressure();
-    //         adjust_publish_rate(max_pressure);
-    //         // ...
+
+private:
+
+    // // 更新共享对象的方法
+    // void update_shared_objects() {
+    //     // todo: 确保在更新共享内存之前，publisher和subscriber暂停使用共享内存
+    //     try {
+    //         // 获取更新后的段管理器
+    //         auto& segment = shm_mgr_.segment();
+    //         registry_ = segment.find<SubscriberRegistryMap>("SubscriberRegistry").first;
+    //         semaphore_ = segment.find<SemaphoreMap>("SemaphoreMap").first;
+    //         cache_ = segment.find_or_construct<PublisherCache>("PublisherCache").first;
+    //         queue_ = segment.find<ChunkQueue<T, N>>(needs_stl_allocator<T>::value ? "ChunkQueueStl" : "ChunkQueueBasic").first;
+    //         if (!registry_) {
+    //         LOGERRLINE("[Publisher] Failed to create SubscriberRegistryMap!");
+    //             // 添加错误处理逻辑，如抛出异常或终止初始化
+    //             throw std::runtime_error("Failed to initialize subscriber registry");
+    //         }
+    //         if (!semaphore_) {
+    //             LOGERRLINE("[Publisher] Failed to create PublisherSemaphore!");
+    //             throw std::runtime_error("Failed to initialize publisher semaphore");
+    //         }
+    //         if (!cache_) {
+    //             LOGERRLINE("[Publisher] Failed to create PublisherCache!");
+    //             throw std::runtime_error("Failed to initialize publisher cache");
+    //         }
+    //         if (!queue_) {
+    //             LOGERRLINE("[Publisher] Failed to create ChunkQueue!");
+    //             throw std::runtime_error("Failed to initialize chunk queue");
+    //         }
+    //     }
+    //         LOGINFOLINE("[Publisher] Updated shared objects after segment expansion");
+    //     } catch (const std::exception& e) {
+    //         LOGERRLINE("[Publisher] Failed to update shared objects: %s", e.what());
     //     }
     // }
 
-private:
     SharedMemoryManager shm_mgr_;
     ChunkQueue<T, N>* queue_;
     SubscriberRegistryMap* registry_;

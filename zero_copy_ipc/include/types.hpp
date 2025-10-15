@@ -4,9 +4,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "shared_memory_allocator.hpp"
 #include "ipc_utils.hpp"
-
-#include "pubsub_types.hpp"
 
 
 namespace zero_copy_ipc {
@@ -83,6 +82,11 @@ NEED_STL_ALLOCATOR(ExampleMessageStlVector); // 类型中包括STL的必要！
 // 成员变量不存储在类的任何实例中，而是作为全局变量存在于每个进程的独立内存空间里。
 // 6. 例如cv::Mat等库中定义的类，内部的 data 指针指向的是进程私有的堆内存。
 // 这块内存由标准库的 malloc 或 new 分配，其地址只在创建它的进程中有意义。
+// 7. 任何包含动态内存分配的类（如 new/delete 或 malloc/free 或 智能指针等）
+// 这些类的内存分配器通常是进程私有的，不能跨进程共享。
+// 8. 任何包含线程同步原语的类（如 std::mutex, std::condition_variable 等）
+// 这些原语的状态和行为依赖于操作系统的实现，不能跨进程共享。
+
 
 
 } // namespace zero_copy_ipc

@@ -11,6 +11,9 @@
 #include <stdexcept>
 #include <iostream>
 #include <fstream>
+#include <mutex>
+
+#include "loghelper.h"
 
 namespace zero_copy_ipc {
 
@@ -32,15 +35,15 @@ public:
             }
             lock_file.close();
             publisher_lock_ = std::make_unique<file_lock>(lock_file_path_.c_str());
-            std::cout << "[SharedMemoryManager] Publisher lock created: " << (publisher_lock_ ? "success" : "failed") << std::endl;
+            LOGINFOLINE("[SharedMemoryManager] Publisher lock created: %s", publisher_lock_ ? "success" : "failed");
             if (!publisher_lock_->try_lock()) {
                 try {
-                    shm_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
+                    segment_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
                 } catch (const interprocess_exception& e) {
-                    std::cerr << "[SharedMemoryManager] Failed to open existing mapped file: " << e.what() << std::endl;
+                    LOGERRLINE("[SharedMemoryManager] Failed to open existing mapped file: %s", e.what());
                     throw;
                 }
-                std::cout << "[SharedMemoryManager] Failed to create mapped file: " << shm_name_ << ", opened existing one" << std::endl;
+                LOGINFOLINE("[SharedMemoryManager] Failed to create mapped file: %s, opened existing one", shm_name_.c_str());
                 is_creator_ = false; // 本进程不是唯一创建者
                 return;
             }
@@ -50,30 +53,29 @@ public:
             try {
                 // 尝试以读写方式打开现有文件
                 try {
-                    shm_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
-                    std::cout << "[SharedMemoryManager] Opened existing mapped file: " << file_path_ << std::endl;
+                    segment_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
+                    LOGINFOLINE("[SharedMemoryManager] Opened existing mapped file: %s", file_path_.c_str());
                 } catch (const interprocess_exception&) {
                     // 文件不存在，创建新文件
-                    shm_ = std::make_unique<managed_mapped_file>(create_only, file_path_.c_str(), size);
-                    std::cout << "[SharedMemoryManager] Created new mapped file: " << file_path_ << " (size: " << size << " bytes)" << std::endl;
+                    segment_ = std::make_unique<managed_mapped_file>(create_only, file_path_.c_str(), size);
+                    LOGINFOLINE("[SharedMemoryManager] Created new mapped file: %s (size: %d bytes)", file_path_.c_str(), size);
                 }
             } catch (const interprocess_exception& e) {
-                std::cerr << "[SharedMemoryManager] Boost Interprocess exception: " << e.what() 
-                          << ", error code: " << e.get_error_code() << std::endl;
+                LOGERRLINE("[SharedMemoryManager] Boost Interprocess exception: %s, error code: %d", e.what(), e.get_error_code());
                 publisher_lock_->unlock();
                 throw;
             } catch (const std::exception& e) {
-                std::cerr << "[SharedMemoryManager] Standard exception: " << e.what() << std::endl;
+                LOGERRLINE("[SharedMemoryManager] Standard exception: %s", e.what());
                 publisher_lock_->unlock();
                 throw;
             } catch (...) {
-                std::cerr << "[SharedMemoryManager] Unknown exception occurred" << std::endl;
+                LOGERRLINE("[SharedMemoryManager] Unknown exception occurred");
                 publisher_lock_->unlock();
                 throw;
             }
         } else {
             // Subscriber (opener) logic
-            shm_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
+            segment_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
         }
     }
 
@@ -88,7 +90,10 @@ public:
     }
 
     // 获取共享内存段的引用
-    managed_mapped_file& shm() { return *shm_; }
+    managed_mapped_file& segment() { return *segment_; }
+    boost::interprocess::managed_mapped_file::segment_manager* get_segment_manager() { return segment_->get_segment_manager(); }
+    std::string get_segment_name() const { return shm_name_; }
+    std::size_t get_grow_size() { return segment_->get_size() / 2; } // todo: 根据申请的stl容器大小动态调整
 
     // 提供静态方法用于手动清理文件
     static void remove(const std::string& name) {
@@ -96,7 +101,7 @@ public:
         std::string lock_file_path;
         ipcdetail::shared_filepath(name.c_str(), file_path);
         lock_file_path = file_path + ".lock";
-        std::cout << "[SharedMemoryManager] Removing mapped file: " << file_path << std::endl;
+        LOGINFOLINE("[SharedMemoryManager] Removing mapped file: %s", file_path.c_str());
         file_mapping::remove(file_path.c_str());
         std::remove(lock_file_path.c_str());
     }
@@ -106,37 +111,33 @@ public:
         return file_path_;
     }
 
-    // 动态扩容方法
-    bool resize(std::size_t new_size, bool force = false) {
-        if (!is_creator_ || !shm_) {
-            std::cerr << "[SharedMemoryManager] Resize failed: not creator or no valid shared memory" << std::endl;
-            return false;
-        }
-        
-        try {
-            // 获取当前大小
-            std::size_t current_size = shm_->get_size();
-            if (new_size <= current_size && !force) {
-                std::cout << "[SharedMemoryManager] New size is not larger than current size: " << current_size << " bytes" << std::endl;
-                return false;
-            }
-            
-            // 首先关闭当前的mapped file
-            shm_.reset();
-            
-            // 使用新大小重新打开
-            // 注意：boost的managed_mapped_file本身不支持动态扩容
-            // 这里我们创建一个新文件并迁移数据（简化版）
-            file_mapping::remove(file_path_.c_str()); // 先删除旧文件
-            shm_ = std::make_unique<managed_mapped_file>(create_only, file_path_.c_str(), new_size);
-            
-            std::cout << "[SharedMemoryManager] Resized file to: " << new_size << " bytes" << std::endl;
-            return true;
-        } catch (const std::exception& e) {
-            std::cerr << "[SharedMemoryManager] Resize failed: " << e.what() << std::endl;
-            return false;
-        }
-    }
+    // // 动态扩容方法
+    // bool resize(std::size_t new_size, bool force = false) {
+    //     if (!is_creator_ || !segment_) {
+    //         LOGERRLINE("[SharedMemoryManager] Resize failed: not creator or no valid shared memory");
+    //         return false;
+    //     }
+    //     try {
+    //         // 获取当前大小
+    //         std::size_t current_size = segment_->get_size();
+    //         if (new_size <= current_size && !force) {
+    //             LOGINFOLINE("[SharedMemoryManager] New size is not larger than current size: %d bytes", current_size);
+    //             return false;
+    //         }
+    //         // 首先关闭当前的mapped file
+    //         segment_.reset();
+    //         // 使用新大小重新打开
+    //         // 注意：boost的managed_mapped_file本身不支持动态扩容
+    //         // 这里我们创建一个新文件并迁移数据（简化版）
+    //         file_mapping::remove(file_path_.c_str()); // 先删除旧文件
+    //         segment_ = std::make_unique<managed_mapped_file>(create_only, file_path_.c_str(), new_size);
+    //         LOGINFOLINE("[SharedMemoryManager] Resized file to: %d bytes", new_size);
+    //         return true;
+    //     } catch (const std::exception& e) {
+    //         LOGERRLINE("[SharedMemoryManager] Resize failed: %s", e.what());
+    //         return false;
+    //     }
+    // }
 
     bool is_shm_ipc_dir_exist() {
         struct stat st;
@@ -151,9 +152,33 @@ public:
         }
     }
 
+    // 更新段管理器
+    // void update_segment_manager() {
+    //     try {
+    //         // 关闭当前的mapped file
+    //         segment_.reset();
+    //         // 重新打开共享内存
+    //         if (is_creator_) {
+    //             // 如果是创建者，尝试以读写方式打开
+    //             try {
+    //                 segment_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
+    //                 LOGINFOLINE("[SharedMemoryManager] Updated segment manager for file: %s", file_path_.c_str());
+    //             } catch (const interprocess_exception& e) {
+    //                 LOGERRLINE("[SharedMemoryManager] Failed to update segment manager: %s", e.what());
+    //                 throw;
+    //             }
+    //         } else {
+    //             // 非创建者，只需重新打开
+    //             segment_ = std::make_unique<managed_mapped_file>(open_only, file_path_.c_str());
+    //         }
+    //     } catch (const std::exception& e) {
+    //         LOGERRLINE("[SharedMemoryManager] Exception during segment manager update: %s", e.what());
+    //     }
+    // }
+
 private:
     std::string shm_name_;
-    std::unique_ptr<managed_mapped_file> shm_; // 改为managed_mapped_file
+    std::unique_ptr<managed_mapped_file> segment_;
     std::unique_ptr<file_lock> publisher_lock_;
     bool is_creator_;
     std::string file_path_; // 存储实际文件路径
