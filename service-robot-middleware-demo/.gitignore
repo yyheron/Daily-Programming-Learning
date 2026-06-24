@@ -1,0 +1,35 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+out/
+
+# Compiled object files
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and data
+*.log
+*.mcap
+*.bag
