@@ -1,0 +1,60 @@
+# Data Recorder Configuration
+# Supports continuous, triggered, and circular buffer recording modes
+
+recorder:
+  # Recording mode: continuous | triggered | circular
+  mode: continuous
+
+  # Output configuration
+  output:
+    path: /data/srm_recordings
+    prefix: session_
+    timestamp_format: "%Y%m%d_%H%M%S"
+
+  # Storage configuration
+  storage:
+    id: mcap
+    serialization_format: cdr
+
+  # Compression configuration
+  compression:
+    enabled: true
+    mode: file       # file | message
+    format: zstd     # zstd | lz4
+
+  # Buffer configuration
+  buffer:
+    max_bag_size: 10737418240      # 10GB per bag file
+    max_cache_size: 2147483648     # 2GB memory cache
+    split_bags: true
+
+  # Topics to record
+  topics:
+    include:
+      - /camera/front/image_raw
+      - /camera/rear/image_raw
+      - /perception/result
+      - /perception/objects
+      - /decision/output
+      - /cmd_vel
+      - /tf
+      - /tf_static
+    exclude:
+      - /rosout
+      - /parameter_events
+
+  # Triggered recording configuration
+  trigger:
+    pre_trigger_buffer_sec: 30
+    post_trigger_buffer_sec: 30
+    triggers:
+      - name: emergency_stop
+        condition: "cmd_vel.linear.x < -0.5"
+      - name: collision_detected
+        condition: "perception.objects.size > 10"
+
+  # Circular buffer configuration (black box)
+  circular_buffer:
+    enabled: false
+    duration_sec: 60
+    memory_limit_mb: 4096

@@ -1,0 +1,99 @@
+# Topic Configuration for Service Robot Middleware Demo
+# Defines topic names, QoS settings, and frame mappings
+
+topics:
+  # Sensor HAL topics (get_data_node -> process_data_node)
+  - name: /camera/front/hal_image
+    type: service_robot_middleware_demo/HalImage
+    qos: sensor_data
+    frame_id: camera_front
+    description: "Front camera HAL image"
+
+  - name: /imu/front/hal_imu
+    type: service_robot_middleware_demo/HalImu
+    qos: sensor_data
+    frame_id: imu_front
+    description: "Front IMU HAL data"
+
+  - name: /chassis/hal_state
+    type: service_robot_middleware_demo/HalChassisState
+    qos: sensor_data
+    frame_id: base_link
+    description: "Chassis HAL state"
+
+  # Sensor ROS topics (process_data_node output)
+  - name: /camera/front/image_raw
+    type: sensor_msgs/Image
+    qos: sensor_data
+    frame_id: camera_front
+    description: "Front camera raw image"
+
+  - name: /imu/data
+    type: sensor_msgs/Imu
+    qos: sensor_data
+    frame_id: imu_front
+    description: "IMU data"
+
+  - name: /odom
+    type: nav_msgs/Odometry
+    qos: sensor_data
+    frame_id: odom
+    description: "Odometry from chassis"
+
+  # Control topics
+  - name: /cmd_vel
+    type: geometry_msgs/Twist
+    qos: reliable
+    description: "Velocity command output"
+
+  # Perception topics
+  - name: /perception/result
+    type: service_robot_middleware_demo/PerceptionResult
+    qos: sensor_data
+    description: "Perception processing result"
+
+  - name: /perception/objects
+    type: vision_msgs/Detection2DArray
+    qos: sensor_data
+    description: "Detected objects in image"
+
+  # Decision topics
+  - name: /decision/output
+    type: std_msgs/String
+    qos: reliable
+    description: "Decision engine output state"
+
+  # System topics
+  - name: /clock
+    type: rosgraph_msgs/Clock
+    qos: system_default
+    description: "Simulation clock (published by data player)"
+
+qos_profiles:
+  sensor_data:
+    history: keep_last
+    depth: 10
+    reliability: best_effort
+    durability: volatile
+
+  reliable:
+    history: keep_last
+    depth: 10
+    reliability: reliable
+    durability: volatile
+
+  system_default:
+    history: keep_last
+    depth: 1
+    reliability: best_effort
+    durability: volatile
+
+# TF frame mappings
+frames:
+  map: map
+  odom: odom
+  base_link: base_link
+  camera_front: camera_front
+  camera_rear: camera_rear
+  imu_front: imu_front
+  lidar: lidar

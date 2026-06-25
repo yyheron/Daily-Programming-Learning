@@ -1,5 +1,4 @@
 .vscode/
-CMakeLists.txt
 PocketFlow-Tutorial-Codebase-Knowledge/
 aarch64-mr527-linux-gnu-gdb
 common/
