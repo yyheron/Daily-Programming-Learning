@@ -9,12 +9,6 @@ topics:
     frame_id: camera_front
     description: "Front camera HAL image"
 
-  - name: /imu/front/hal_imu
-    type: service_robot_middleware_demo/HalImu
-    qos: sensor_data
-    frame_id: imu_front
-    description: "Front IMU HAL data"
-
   - name: /chassis/hal_state
     type: service_robot_middleware_demo/HalChassisState
     qos: sensor_data
