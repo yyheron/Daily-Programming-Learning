@@ -66,11 +66,10 @@ set(dependencies
 )
 
 if(NOT TARGET_SIM)
-    # Normal mode: compile HAL library
+    # Normal mode: compile HAL library and all nodes
     add_library(dummy_hal SHARED
         dummy_hal/dummy_camera.cpp
-        dummy_hal/imu_interface.cpp
-        dummy_hal/chassis_interface.cpp
+        dummy_hal/chassis_interface.c
     )
     ament_target_dependencies(dummy_hal ${dependencies})
     target_include_directories(dummy_hal PUBLIC
@@ -78,54 +77,50 @@ if(NOT TARGET_SIM)
         $<INSTALL_INTERFACE:include>
     )
 
-    # COM process: camera + imu + chassis in one process
+    # COM process: camera + chassis in one process
     add_executable(com_node
         com/com_node.cpp
-        com/camera/camera_get_data_node.cpp
-        com/camera/camera_process_data_node.cpp
-        com/imu/imu_get_data_node.cpp
-        com/imu/imu_process_data_node.cpp
-        com/chassis/chassis_get_data_node.cpp
-        com/chassis/chassis_process_data_node.cpp
+        com/camera/camera_hal_if.cpp
+        com/camera/camera_process.cpp
+        com/chassis/chassis_hal_if.cpp
+        com/chassis/chassis_process.cpp
     )
     ament_target_dependencies(com_node ${dependencies})
     target_link_libraries(com_node dummy_hal)
     rosidl_target_interfaces(com_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
-    # Independent nodes
+    # perception_node: independent process
     add_executable(perception_node per/perception_node.cpp)
     ament_target_dependencies(perception_node ${dependencies})
     rosidl_target_interfaces(perception_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
+    # navigation_node: independent process
     add_executable(navigation_node nav/navigation_node.cpp)
     ament_target_dependencies(navigation_node ${dependencies})
     rosidl_target_interfaces(navigation_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
+    # DCAP: data recorder (only in normal mode)
     add_executable(data_recorder_node middleware/dcap/data_recorder_node.cpp)
     ament_target_dependencies(data_recorder_node ${dependencies})
     rosidl_target_interfaces(data_recorder_node ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
-    add_executable(node_manager middleware/node_manager/node_manager.cpp)
-    ament_target_dependencies(node_manager ${dependencies})
-    rosidl_target_interfaces(node_manager ${PROJECT_NAME} "rosidl_typesupport_cpp")
+    # node_manager: commented out for now
+    # add_executable(node_manager middleware/node_manager/node_manager.cpp)
+    # ament_target_dependencies(node_manager ${dependencies})
+    # rosidl_target_interfaces(node_manager ${PROJECT_NAME} "rosidl_typesupport_cpp")
 
     install(TARGETS
         com_node
         perception_node
         navigation_node
         data_recorder_node
-        node_manager
+        # node_manager  # commented out
         DESTINATION lib/${PROJECT_NAME}
     )
 else()
     # Simulation mode: single process with all nodes
     add_executable(sim_node
         sim/sim_node.cpp
-        com/camera/camera_node.cpp
-        com/imu/imu_node.cpp
-        com/chassis/chassis_node.cpp
-        per/perception_node.cpp
-        nav/navigation_node.cpp
     )
     ament_target_dependencies(sim_node ${dependencies})
     rosidl_target_interfaces(sim_node ${PROJECT_NAME} "rosidl_typesupport_cpp")

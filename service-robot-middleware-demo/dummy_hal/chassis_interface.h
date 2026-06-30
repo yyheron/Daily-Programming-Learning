@@ -1,63 +1,34 @@
 #pragma once
 
-#include <cstdint>
-#include <vector>
+#include <stdint.h>
+#include <rclcpp/rclcpp.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 
-namespace hal {
-
-struct TwistMessage {
-    float linear_x;
-    float linear_y;
-    float linear_z;
-    float angular_x;
-    float angular_y;
-    float angular_z;
-};
-
-struct ChassisState {
-    uint64_t timestamp_ns;
-    float x;
-    float y;
-    float theta;
-    float linear_velocity;
-    float angular_velocity;
-};
-
-struct ImuData {
-    uint64_t timestamp_ns;
-    float linear_acceleration[3];
-    float angular_velocity[3];
-    float orientation[4];
-};
-
-typedef void (*ChassisStateCallback)(const ChassisState* pState);
-typedef void (*ImuDataCallback)(const ImuData* pData);
-
-class IChassisDevice {
-public:
-    virtual ~IChassisDevice() = default;
-
-    virtual bool open() = 0;
-    virtual void close() = 0;
-
-    virtual bool set_speed(const TwistMessage& twist) = 0;
-
-    virtual void set_state_callback(ChassisStateCallback callback) = 0;
-    virtual void set_imu_callback(ImuDataCallback callback) = 0;
-
-    virtual bool start() = 0;
-    virtual void stop() = 0;
-
-    virtual void reset_position(float x, float y, float theta) = 0;
-    virtual ChassisState get_state() const = 0;
-};
-
+#ifdef __cplusplus
 extern "C" {
-int rca_chassis_init();
-int rca_chassis_set_speed(const TwistMessage* twist);
-int rca_chassis_start(ChassisStateCallback state_callback, ImuDataCallback imu_callback);
-int rca_chassis_stop();
-int rca_chassis_exit();
-}
+#endif
 
-} // namespace hal
+typedef struct {
+    double x;  /* 或 float — 看你对精度的需求 */
+    double y;
+    double z;
+} Vector3;
+
+/* 等价于 geometry_msgs/msg/Twist */
+typedef struct {
+    Vector3 linear;   /* 线速度 m/s */
+    Vector3 angular;  /* 角速度 rad/s */
+} Twist;
+
+typedef struct {
+    uint64_t timestamp_ns;
+    Vector3 position;
+    Twist velocity;
+} CmdVelocity;
+
+int rca_chassis_set_speed(const geometry_msgs::msg::Twist::ConstSharedPtr& msg);
+bool rca_chassis_get_speed(const geometry_msgs::msg::Twist::MutableSharedPtr& msg);
+
+#ifdef __cplusplus
+}
+#endif

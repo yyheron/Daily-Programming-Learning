@@ -2,10 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/twist.hpp>
-#include <sensor_msgs/msg/imu.hpp>
 #include <nav_msgs/msg/odometry.hpp>
-
-
 
 class NavigationNode : public rclcpp::Node {
 public:
@@ -18,7 +15,6 @@ private:
         STOPPED
     };
 
-    void imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg);
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg);
     void control_loop();
 
@@ -36,13 +32,7 @@ private:
     double start_x_;
     double start_y_;
 
-    double latest_angular_z_ = 0.0;
-    double latest_linear_acc_x_ = 0.0;
-
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
-    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
     rclcpp::TimerBase::SharedPtr control_timer_;
 };
-
-

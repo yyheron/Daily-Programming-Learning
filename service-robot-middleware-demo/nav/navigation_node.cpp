@@ -3,8 +3,6 @@
 
 using namespace std::chrono_literals;
 
-
-
 NavigationNode::NavigationNode(const rclcpp::NodeOptions& options)
     : Node("navigation_node", options),
       target_distance_(10.0),
@@ -20,17 +18,12 @@ NavigationNode::NavigationNode(const rclcpp::NodeOptions& options)
       start_x_(0.0),
       start_y_(0.0) {
     this->declare_parameter("cmd_vel_topic", "/cmd_vel");
-    this->declare_parameter("imu_topic", "/imu/data");
     this->declare_parameter("odom_topic", "/odom");
 
     std::string cmd_vel_topic = this->get_parameter("cmd_vel_topic").as_string();
-    std::string imu_topic = this->get_parameter("imu_topic").as_string();
     std::string odom_topic = this->get_parameter("odom_topic").as_string();
 
     cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(cmd_vel_topic, 10);
-
-    imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
-        imu_topic, 10, std::bind(&NavigationNode::imu_callback, this, std::placeholders::_1));
 
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
         odom_topic, 10, std::bind(&NavigationNode::odom_callback, this, std::placeholders::_1));
@@ -39,14 +32,8 @@ NavigationNode::NavigationNode(const rclcpp::NodeOptions& options)
         100ms, std::bind(&NavigationNode::control_loop, this));
 
     RCLCPP_INFO(this->get_logger(), "NavigationNode started");
-    RCLCPP_INFO(this->get_logger(), "  Publishing: %s", cmd_vel_topic.c_str());
-    RCLCPP_INFO(this->get_logger(), "  Subscribing: %s, %s", imu_topic.c_str(), odom_topic.c_str());
-    RCLCPP_INFO(this->get_logger(), "  Pattern: forward 10m -> turn left 90 degrees -> repeat");
-}
-
-void NavigationNode::imu_callback(const sensor_msgs::msg::Imu::SharedPtr msg) {
-    latest_angular_z_ = msg->angular_velocity.z;
-    latest_linear_acc_x_ = msg->linear_acceleration.x;
+    RCLCPP_INFO(this->get_logger(), "  Publishing cmd_vel to: %s", cmd_vel_topic.c_str());
+    RCLCPP_INFO(this->get_logger(), "  Subscribing to odom: %s", odom_topic.c_str());
 }
 
 void NavigationNode::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) {
@@ -55,6 +42,12 @@ void NavigationNode::odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
     float q_w = msg->pose.pose.orientation.w;
     float q_z = msg->pose.pose.orientation.z;
     float theta = 2.0f * atan2(q_z, q_w);
+
+    RCLCPP_INFO(this->get_logger(), 
+        "Navigation received odom: x=%.2f, y=%.2f, theta=%.2f, linear_vel=%.2f, angular_vel=%.2f",
+        x, y, theta, 
+        msg->twist.twist.linear.x, 
+        msg->twist.twist.angular.z);
 
     switch (state_) {
         case State::FORWARD: {
@@ -116,6 +109,7 @@ void NavigationNode::control_loop() {
     }
 
     cmd_vel_pub_->publish(cmd_vel);
+    RCLCPP_INFO(this->get_logger(), 
+        "Navigation publishing cmd_vel: linear_x=%.2f, angular_z=%.2f",
+        cmd_vel.linear.x, cmd_vel.angular.z);
 }
-
-
