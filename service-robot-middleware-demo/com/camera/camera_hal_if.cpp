@@ -1,8 +1,8 @@
 #include "camera_hal_if_node.hpp"
 
-#include "dummy_camera.h"
+#include "camera_interface.h"
 
-void CameraHalIfNode::OnCameraFrameReceived(const ImageMessage* pData)
+void CameraHalIfNode::OnCameraFrameReceived(const struct ImageMessage* pData)
 {
     static uint32_t seq = 0;
     service_robot_middleware_demo::msg::HalImage image_msg;
@@ -13,7 +13,7 @@ void CameraHalIfNode::OnCameraFrameReceived(const ImageMessage* pData)
     image_msg.width = pData->width;
     image_msg.height = pData->height;
     image_msg.step = pData->width * pData->channels;
-    image_msg.data = std::move(pData->data);
+    image_msg.data.assign(pData->data, pData->data + pData->data_size);
     image_pub_->publish(image_msg);
 }
 

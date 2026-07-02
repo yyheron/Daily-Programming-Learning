@@ -1,0 +1,88 @@
+<mxfile host="65bd71144e">
+    <diagram name="软件架构图" id="diag-002">
+        <mxGraphModel dx="1143" dy="1033" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="1000" background="#ffffff" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="HW" value="(Virtual) Machine / Container / Hardware" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#6a00ff;strokeColor=#3700CC;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="880" width="1000" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="POSIX" value="POSIX PSE51 / C++ STL&#10;Operating System Interface" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#0050ef;strokeColor=#001DBC;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="800" width="1000" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="HAL" value="HAL&#10;Hardware Abstract Layer" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#008a00;strokeColor=#005700;strokeWidth=2;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="720" width="1000" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="TIMESYNC" value="timesync&#10;security&#10;..." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a0522d;strokeColor=#6D1F00;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="640" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="LOGSERVICE" value="rrlog&#10;log service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a0522d;strokeColor=#6D1F00;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="640" width="780" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ROS2" value="Middleware Layer(ROS2)&#10;rmw(ROS Middleware): transport(intra/inter-process), node_mgr, param_svc, lifecycle, discovery&#10;DDS RWM Implematation" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fa6800;strokeColor=#C73500;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="540" width="1000" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="COM" value="rclcpp::com&#10;通讯应用层(中间层)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0a30a;strokeColor=#BD7000;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="460" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="WDG" value="rclcpp::wdg&#10;进程管理及系统监控" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0a30a;strokeColor=#BD7000;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="460" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="DATACAPTURE" value="rclcpp::dcap&#10;数据采集" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0a30a;strokeColor=#BD7000;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="490" y="460" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="DATAREPLAY" value="rclcpp::drep&#10;数据回灌" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0a30a;strokeColor=#BD7000;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="710" y="460" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="CM" value="rclcpp::cm&#10;配置管理" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0a30a;strokeColor=#BD7000;fontSize=11;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="930" y="460" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="perception" value="rclcpp::per&#10;感知融合" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#647687;strokeColor=#314354;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="380" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="navigation" value="rclcpp::nav&#10;运动规划" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#647687;strokeColor=#314354;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="380" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="decision" value="rclcpp::dec&#10;决策" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#647687;strokeColor=#314354;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="490" y="380" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="slam" value="rclcpp::slam&#10;定位建图" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#647687;strokeColor=#314354;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="710" y="380" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="vslam" value="rclcpp::vslam&#10;视觉定位" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#647687;strokeColor=#314354;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="930" y="380" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="task" value="rclcpp::fsm&#10;任务编排" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="300" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="hmi" value="rclcpp::hmi&#10;人机交互" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="300" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="fm" value="rclcpp::fm&#10;错误管理" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="490" y="300" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="OTA" value="rclcpp::ota&#10;远程更新" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="710" y="300" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="biz" value="rclcpp::aux&#10;其他服务" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;fontSize=11;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="930" y="300" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="vla" value="VLA决策引擎" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBBE80;strokeColor=#b46504;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="50" y="180" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="world_model_1" value="世界模型引擎" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBBE80;strokeColor=#e91e63;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="180" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="world_model_2" value="状态预测" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBBE80;strokeColor=#e91e63;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="490" y="180" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="world_model_3" value="场景理解" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBBE80;strokeColor=#e91e63;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="710" y="180" width="200" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="world_model_4" value="规划仿真" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBBE80;strokeColor=#e91e63;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="930" y="180" width="120" height="60" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

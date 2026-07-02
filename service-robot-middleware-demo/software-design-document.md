@@ -22,6 +22,8 @@
 
 ### 2.1 分层架构图
 
+[查看 drawio 版本](software-architecture.drawio)
+
 ```mermaid
 
 block-beta

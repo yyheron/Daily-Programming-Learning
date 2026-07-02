@@ -1,0 +1,172 @@
+<mxfile host="65bd71144e">
+    <diagram name="分层架构图" id="diag-001">
+        <mxGraphModel dx="863" dy="338" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1100" pageHeight="800" background="none" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="OS" value="操作系统层 OS" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#647687;strokeColor=#314354;strokeWidth=2;fontSize=14;fontStyle=1;fontColor=#ffffff;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="150" y="600" width="800" height="130" as="geometry"/>
+                </mxCell>
+                <mxCell id="ROS2" value="ROS2 / rclcpp" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="432" y="628" width="200" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="LINUX" value="Linux / Windows" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#76608a;strokeColor=#432D57;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="432" y="679" width="200" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="MW" value="中间件层 Middleware" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f0a30a;strokeColor=#BD7000;strokeWidth=2;fontSize=14;fontStyle=1;verticalAlign=top;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="-12" y="506" width="300" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="DCAP" value="DCAP&#10;(数据录制)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#7b1fa2;" parent="1" vertex="1">
+                    <mxGeometry x="63" y="535" width="150" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="HAL" value="硬件抽象层 HAL" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3c800;strokeColor=#B09500;strokeWidth=2;fontSize=14;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+                    <mxGeometry x="150" y="380" width="800" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="CAM_HAL" value="Dummy Camera" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a0522d;strokeColor=#6D1F00;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="410" width="200" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="CHA_HAL" value="Dummy Chassis" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a0522d;strokeColor=#6D1F00;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="410" width="200" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="COM" value="通信适配层 Communication" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#60a917;strokeColor=#2D7600;strokeWidth=2;fontSize=14;fontStyle=1;fontColor=#ffffff;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="150" y="200" width="800" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="COM_HALIF" value="Chassis" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#008a00;strokeColor=#005700;strokeWidth=1;fontSize=12;fontStyle=1;fontColor=#ffffff;align=center;horizontal=1;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="654" y="209" width="219" height="135" as="geometry"/>
+                </mxCell>
+                <mxCell id="COM_PROC" value="Camera" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#008a00;strokeColor=#005700;strokeWidth=1;fontSize=12;fontStyle=1;fontColor=#ffffff;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="200" y="214" width="212" height="132" as="geometry"/>
+                </mxCell>
+                <mxCell id="CAM_IF" value="Camera HAL IF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#2e7d32;" parent="1" vertex="1">
+                    <mxGeometry x="231" y="299" width="150" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="CHA_IF" value="Chassis HAL IF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#2e7d32;" parent="1" vertex="1">
+                    <mxGeometry x="688.5" y="306" width="150" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="CAM_PROC" value="Camera Process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#2e7d32;" parent="1" vertex="1">
+                    <mxGeometry x="229" y="244" width="150" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="APP" value="应用层 Application" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#1ba1e2;strokeColor=#006EAF;strokeWidth=2;fontSize=14;fontStyle=1;fontColor=#ffffff;verticalAlign=top;" parent="1" vertex="1">
+                    <mxGeometry x="150" y="80" width="800" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="PER" value="PER (感知)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6a00ff;strokeColor=#3700CC;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="250" y="110" width="200" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="NAV" value="NAV (导航)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#6a00ff;strokeColor=#3700CC;fontColor=#ffffff;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="110" width="200" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="conn1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#EDEDED;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" parent="1" target="PER" edge="1" source="CAM_PROC">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="300" y="252" as="sourcePoint"/>
+                        <mxPoint x="450" y="150" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="304" y="199"/>
+                            <mxPoint x="304" y="199"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="label1" value="image_raw" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];labelBackgroundColor=none;" parent="conn1" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint y="-26" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="NAV" target="CHA_PROC" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="750" y="150" as="sourcePoint"/>
+                        <mxPoint x="725" y="240" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="750" y="217"/>
+                            <mxPoint x="750" y="217"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="label2" value="cmd_vel" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];" parent="conn2" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint x="33" y="-3" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="CHA_PROC" target="CHA_IF" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="725" y="255" as="sourcePoint"/>
+                        <mxPoint x="375" y="255" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="757" y="300"/>
+                            <mxPoint x="757" y="300"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="label5" value="cmd_vel" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];labelBackgroundColor=none;" parent="conn5" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint x="28" y="1" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="CAM_IF" target="CAM_HAL" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="275" y="270" as="sourcePoint"/>
+                        <mxPoint x="350" y="410" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="312" y="392"/>
+                            <mxPoint x="312" y="392"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="label6" value="回调HalImage" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];labelBackgroundColor=none;" parent="conn6" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint x="38" y="8" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn8" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="CHA_IF" target="CHA_HAL" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="425" y="255" as="sourcePoint"/>
+                        <mxPoint x="750" y="430" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="750" y="358"/>
+                            <mxPoint x="750" y="358"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="label8" value="set/get" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];labelBackgroundColor=none;" parent="conn8" vertex="1" connectable="0">
+                    <mxGeometry x="-0.2" relative="1" as="geometry">
+                        <mxPoint x="24" y="9" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn10" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="CAM_HAL" target="OS" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="350" y="450" as="sourcePoint"/>
+                        <mxPoint x="350" y="600" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="350" y="556"/>
+                            <mxPoint x="350" y="556"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="conn11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" parent="1" source="CHA_HAL" target="OS" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="750" y="450" as="sourcePoint"/>
+                        <mxPoint x="750" y="600" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="750" y="569"/>
+                            <mxPoint x="750" y="569"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="CHA_PROC" value="Chassis Process" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#a5d6a7;strokeColor=#2e7d32;" parent="1" vertex="1">
+                    <mxGeometry x="688.5" y="244" width="150" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="" style="group" vertex="1" connectable="0" parent="1">
+                    <mxGeometry x="338" y="288.9957142857143" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="" style="edgeStyle=none;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" edge="1" parent="4" source="CAM_IF">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="-32" y="-16.995714285714314" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="3" value="image_raw" style="edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];labelBackgroundColor=none;" vertex="1" connectable="0" parent="4">
+                    <mxGeometry x="-1" y="3" as="geometry">
+                        <mxPoint x="1" y="-3" as="offset"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

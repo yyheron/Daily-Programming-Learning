@@ -68,7 +68,7 @@ set(dependencies
 if(NOT TARGET_SIM)
     # Normal mode: compile HAL library and all nodes
     add_library(dummy_hal SHARED
-        dummy_hal/dummy_camera.cpp
+        dummy_hal/camera_interface.c
         dummy_hal/chassis_interface.c
     )
     ament_target_dependencies(dummy_hal ${dependencies})
@@ -76,6 +76,7 @@ if(NOT TARGET_SIM)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include>
     )
+    target_link_libraries(dummy_hal pthread)
 
     # COM process: camera + chassis in one process
     add_executable(com_node
